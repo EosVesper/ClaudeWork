@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;width:1920px;height:1080px;overflow:hidden;font-family:"Inter Display","Inter",sans-serif;color:#fff}
+#stage{position:absolute;inset:0}
+.num{position:absolute;left:150px;top:250px;font-size:420px;font-weight:700;letter-spacing:-0.045em;line-height:1;
+ background:linear-gradient(100deg,#3a3a3a 0%,#fff 40%,#fff 55%,#4a4a4a 90%);-webkit-background-clip:text;color:transparent}
+.unit{position:absolute;left:162px;top:700px;font-size:56px;font-weight:500;letter-spacing:-0.01em;color:#d8d8d8}
+.kick{position:absolute;left:164px;top:200px;font-size:26px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#ff9f3a}
+.rail{position:absolute;right:150px;top:260px;width:6px;height:560px;background:#1a1a1a;border-radius:3px;overflow:hidden}
+.fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(#fff,#ff9f3a)}
+.tick{position:absolute;right:176px;font-size:22px;color:#777;font-weight:500;text-align:right}
+</style></head><body><div id="stage">
+<div class="kick" id="kick">PROLED XDR</div>
+<div class="num" id="num">2000</div>
+<div class="unit" id="unit">nits peak HDR and SDR brightness</div>
+<div class="rail"><div class="fill" id="fill"></div></div>
+<div class="tick" style="top:250px">2000</div><div class="tick" style="top:530px">1000 sustained</div><div class="tick" style="top:800px">0</div>
+</div><script>
+const E=x=>x<0?0:x>1?1:x*x*(3-2*x);
+function spring(x,w=10,z=.9){if(x<=0)return 0;const wd=w*Math.sqrt(1-z*z);return 1-Math.exp(-z*w*x)*(Math.cos(wd*x)+(z*w/wd)*Math.sin(wd*x));}
+window.render=t=>{
+ const n=Math.round(2000*E(t/1.4));
+ num.textContent=n.toString();
+ num.style.backgroundPosition=(100-60*E(t/2.4))+'% 0';num.style.backgroundSize='250% 100%';
+ num.style.transform=`translateY(${(1-spring(t))*60}px) scale(${1+0.02*t})`;num.style.transformOrigin='left center';
+ fill.style.height=(100*E(t/1.4))+'%';
+ unit.style.opacity=E((t-.6)/.5);kick.style.opacity=E(t/.4);
+};
+document.fonts.ready.then(()=>{render(0);window.ready=true});
+</script></body></html>
