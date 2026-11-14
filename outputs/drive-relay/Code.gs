@@ -2,7 +2,7 @@
 // 需要：左侧「服务」里添加 Drive API；给 sync 加「每分钟」的时间触发器。
 const REPO = 'EosVesper/ClaudeWork';
 const BRANCH = 'drive-inbox';
-const FOLDER = 'Claude中转';
+const FOLDER = 'Claude Relay';
 
 function sync() {
   const lock = LockService.getScriptLock();
