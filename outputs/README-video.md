@@ -16,3 +16,9 @@ AI 图片 + 配音 → 推拉运镜、叠化、烧录字幕、片尾字卡。
 - 图片路径（`UP`、`SCENES`）和字体路径（`FONT`）
 - 字幕与时间轴（`timing.json` 或 `CAPS`）
 - 配音合成：`ffmpeg -i video.mp4 -i voice.mp3 -map 0:v -map 1:a -c:v copy -af loudnorm=I=-15:TP=-1.5 -c:a aac -shortest out.mp4`
+
+## video-sunset-v2/ — 晚霞短片第二版
+图生视频片段（先用 ffmpeg 裁成竖屏并抽帧到 `fr/`）+ 棱镜静态图 + 代码画的大气层示意动画。
+- `render.py`：渲染画面；`python3 render.py render 3` 可只重渲某个场景
+- `music.py`：用 numpy 合成氛围铺底音乐，`python3 music.py 29.71` 生成 `music.wav`
+- 混音：人声 loudnorm 到 -15 LUFS，音乐 `volume=0.22` 并用 `sidechaincompress` 在人声出现时压低
