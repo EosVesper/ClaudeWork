@@ -1,25 +1,60 @@
-// GitHub → Google Drive 中转。贴到 script.google.com 的项目里，给 sync 加一个定时触发器。
-// Claude 把文件推到 claudework 仓库 drive-inbox 分支的 to-drive/ 里，并更新 index.json；
-// 这个脚本读 index.json，把还没存过的文件复制到 Drive 的「Claude中转」文件夹。
-const RAW = 'https://raw.githubusercontent.com/EosVesper/ClaudeWork/drive-inbox/to-drive/';
+// GitHub → Google Drive 中转（第 2 版：支持大文件，每分钟检查一次）
+// 需要：左侧「服务」里添加 Drive API；给 sync 加「每分钟」的时间触发器。
+const REPO = 'EosVesper/ClaudeWork';
+const BRANCH = 'drive-inbox';
 const FOLDER = 'Claude中转';
 
 function sync() {
-  const props = PropertiesService.getScriptProperties();
-  const done = JSON.parse(props.getProperty('done') || '{}');
-  const list = JSON.parse(UrlFetchApp.fetch(RAW + 'index.json?t=' + Date.now()).getContentText());
-  const found = DriveApp.getFoldersByName(FOLDER);
-  const folder = found.hasNext() ? found.next() : DriveApp.createFolder(FOLDER);
-  const current = {};
-  list.forEach(function (f) {
-    current[f.id] = true;
-    if (done[f.id]) return;
-    const blob = UrlFetchApp.fetch(RAW + encodeURIComponent(f.name)).getBlob().setName(f.name);
-    folder.createFile(blob);
-    done[f.id] = true;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;              // 上一次还在传，就跳过
+  try {
+    const props = PropertiesService.getScriptProperties();
+    // 1. 看分支有没有新提交（这个地址没有缓存，也不需要令牌）
+    const refs = UrlFetchApp.fetch('https://github.com/' + REPO + '.git/info/refs?service=git-upload-pack').getContentText();
+    const m = refs.match(new RegExp('([0-9a-f]{40}) refs/heads/' + BRANCH + '\\n'));
+    if (!m || props.getProperty('sha') === m[1]) return;
+    const raw = 'https://raw.githubusercontent.com/' + REPO + '/' + m[1] + '/to-drive/';
+    // 2. 读清单，把没存过的文件传进 Drive
+    const list = JSON.parse(UrlFetchApp.fetch(raw + 'index.json').getContentText());
+    const done = JSON.parse(props.getProperty('done') || '{}');
+    const found = DriveApp.getFoldersByName(FOLDER);
+    const folder = found.hasNext() ? found.next() : DriveApp.createFolder(FOLDER);
+    const current = {};
+    list.forEach(function (f) {
+      current[f.id] = true;
+      if (done[f.id]) return;
+      upload(raw, f, folder.getId());
+      done[f.id] = true;
+      props.setProperty('done', JSON.stringify(done));
+      console.log('已保存：' + f.name + '（' + f.size + ' 字节）');
+    });
+    Object.keys(done).forEach(function (k) { if (!current[k]) delete done[k]; });
     props.setProperty('done', JSON.stringify(done));
-    console.log('已保存：' + f.name);
+    props.setProperty('sha', m[1]);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 分片下载，再用 Drive 的断点续传接口拼成一个完整文件
+function upload(raw, f, folderId) {
+  const auth = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
+  const init = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+    method: 'post', contentType: 'application/json', headers: auth,
+    payload: JSON.stringify({ name: f.name, parents: [folderId] })
   });
-  Object.keys(done).forEach(function (k) { if (!current[k]) delete done[k]; });
-  props.setProperty('done', JSON.stringify(done));
+  const h = init.getHeaders();
+  const url = h['Location'] || h['location'];
+  let pos = 0;
+  f.parts.forEach(function (p) {
+    const bytes = UrlFetchApp.fetch(raw + p).getContent();
+    const end = pos + bytes.length - 1;
+    const r = UrlFetchApp.fetch(url, {
+      method: 'put', payload: bytes, muteHttpExceptions: true,
+      headers: { 'Content-Range': 'bytes ' + pos + '-' + end + '/' + f.size }
+    });
+    const code = r.getResponseCode();
+    if (code !== 308 && code !== 200 && code !== 201) throw new Error('上传失败 ' + code + '：' + r.getContentText().slice(0, 300));
+    pos = end + 1;
+  });
 }
