@@ -58,3 +58,9 @@ function upload(raw, f, folderId) {
     pos = end + 1;
   });
 }
+
+// 运行一次即可：创建「每分钟运行 sync」的触发器（会先删掉本项目已有的触发器）
+function setup() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('sync').timeBased().everyMinutes(1).create();
+}
