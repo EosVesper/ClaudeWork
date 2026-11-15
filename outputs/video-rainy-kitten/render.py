@@ -1,5 +1,10 @@
 """练习 4《雨天的小橘猫》：5 个图生视频镜头 + 慢推运镜 + 冷暖调色 + 逐句字幕 + 片尾。
-准备：ffmpeg -i src/sN.mp4 -vf fps=30 -q:v 2 fr/cN_%03d.jpg   （N = 1..5）
+准备（抽帧到 fr/）：
+  S1 S4 S5 原速：ffmpeg -i src/sN.mp4 -vf fps=30 -q:v 2 fr/cN_%03d.jpg
+  S2 只用前 1.3 秒（之后猫头变大、穿进盒盖），放慢到 0.35 倍并补帧：
+    ffmpeg -t 1.3 -i src/s2.mp4 -vf "setpts=PTS/0.35,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:vsbmc=1" -q:v 2 fr/c2_%03d.jpg
+  S3 只用 0.8~3.65 秒（雨靴走进来那段），放慢到 0.55 倍并补帧：
+    ffmpeg -ss 0.8 -t 2.85 -i src/s3.mp4 -vf "setpts=PTS/0.55,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:vsbmc=1" -q:v 2 fr/c3_%03d.jpg
   python3 render.py preview t1 t2 ...   -> contact.png
   python3 render.py render [场景号...]  -> video.mp4（无声）
 时间轴（场景时长、配音放置、字幕）都在 timing.py 里，audio.py 共用。
@@ -17,8 +22,8 @@ CAP_Y = 1400
 # 每个镜头：(起始缩放, 结束缩放, 焦点x, 焦点y)  焦点是画面上保持不动的点（0~1）
 CAM = [(1.00, 1.10, 0.68, 0.74),   # S1 远景，慢慢推向纸箱
        (1.06, 1.00, 0.50, 0.40),   # S2 轻微拉远，带出窗户
-       (1.00, 1.05, 0.50, 0.55),   # S3
-       (1.00, 1.07, 0.45, 0.45),   # S4 推向猫脸
+       (1.27, 1.33, 0.60, 1.00),   # S3 裁掉上面 1/5：伞面和握伞的手出画，只留伞柄和雨靴
+       (1.33, 1.38, 0.28, 1.00),   # S4 推近到猫脸和指尖：背景的小伞、蓝袖子出画
        (1.08, 1.00, 0.50, 0.60)]   # S5 拉远收尾
 # 调色：(R, G, B 增益, 饱和度)  前四镜偏冷，S5 偏暖
 GRADE = [(0.95, 1.0, 1.06, 0.90)] * 4 + [(1.06, 1.0, 0.90, 1.08)]
