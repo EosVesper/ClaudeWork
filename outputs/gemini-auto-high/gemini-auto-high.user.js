@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gemini Auto High Thinking
 // @namespace    eosvesper.gemini-auto-high
-// @version      5.0
+// @version      5.1
 // @description  打开 Gemini 网页 / 新建对话时，自动把 Thinking level 设为 High（适配 iPad Safari + Stay）
 // @match        https://gemini.google.com/*
 // @run-at       document-idle
@@ -149,7 +149,9 @@
     const c0 = ctx();
     if (!c0) return null;
     const { scope, header } = c0;
-    const c = textEls(TARGET, scope).filter(e => !header.contains(e));
+    // High 选项是嵌在 Thinking level 菜单项里面的子菜单项，
+    // 所以只排除“最近可点元素就是标题行本身”的文字，而不是标题行里所有东西
+    const c = textEls(TARGET, scope).filter(e => clickTarget(e, scope) !== header);
     // 优先选旁边带 “Extra thorough” 说明的那个
     return c.find(e => TARGET_HINT.test(clickTarget(e, scope).innerText || '')) || c[0];
   }
@@ -179,11 +181,12 @@
       if (!c) { log('✗ 打开菜单后没看到 "Thinking level"（当前模型可能不支持档位）'); closeMenu(); return; }
       log('Thinking 行:', c.header);
 
-      // 已经是 High 了就直接收起
+      // 标题行上直接显示当前档位为 High（折叠状态）→ 直接收起
       const headerText = (c.header.innerText || '').replace(c.think.innerText, '').trim();
       if (/^(high|高)(\b|$)/i.test(headerText) && !findHigh()) {
         log('✓ 当前已经是 High'); closeMenu(); return;
       }
+      const isExpanded = el => el.getAttribute('aria-expanded') === 'true' || el.classList.contains('expanded');
 
       let high = findHigh();
       // 依次尝试不同的点击目标，每次只点一个，点完等结果，避免“展开又收起”
@@ -207,6 +210,12 @@
       for (let n = 0; n < 8 && !high; n++) {
         c = ctx();
         if (!c) { log('菜单关了，重新打开'); tap(modelBtn); await waitFor(findThink, 2000); c = ctx(); if (!c) break; }
+        if (isExpanded(c.header)) {
+          // 已经展开了就绝不再点（再点会收起），只等选项出现
+          log('Thinking 行已展开，等待选项');
+          high = await waitFor(findHigh, 2000);
+          break;
+        }
         const t = candidates(c).find(e => !tried.some(x => x.isSameNode(e) || (x.outerHTML === e.outerHTML && x.innerText === e.innerText)));
         if (!t) break;
         tried.push(t);
@@ -221,10 +230,14 @@
         return;
       }
       const highBtn = clickTarget(high, (ctx() || { scope: document.body }).scope);
+      const isChecked = el => el.getAttribute('aria-checked') === 'true' || el.classList.contains('selected');
+      if (isChecked(highBtn)) { log('✓ 当前已经是 High'); closeMenu(); return; }
       log('点 High →', highBtn);
       tap(highBtn);
-      await sleep(500);
-      log('✓ 完成');
+      await sleep(600);
+      const again = findHigh();
+      const ok = !again || isChecked(clickTarget(again, (ctx() || { scope: document.body }).scope));
+      log(ok ? '✓ 完成，已切到 High' : '? 点了 High，但没看到选中标记，请看一下菜单');
       if (findThink()) closeMenu();
     } catch (e) {
       log('✗ 出错:', e && e.message);
