@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Gemini Auto High Thinking
 // @namespace    eosvesper.gemini-auto-high
-// @version      5.2
-// @description  打开 Gemini 网页 / 新建对话时，自动把 Thinking level 设为 High（适配 iPad Safari + Stay）
+// @version      6.0
+// @description  打开 Gemini 网页 / 新建对话时，自动切到 Task 模式并把 Thinking level 设为 High（适配 iPad Safari + Stay）
 // @match        https://gemini.google.com/*
 // @run-at       document-idle
 // @grant        none
@@ -15,6 +15,7 @@
   // ============ 配置 ============
   const DEBUG = true;            // 第一次用保持 true：右下角会出现日志框。成功后改成 false
   const ONLY_NEW_CHAT = true;    // true：只在首次加载和“新对话”页面执行；false：每次切换对话都执行
+  const TARGET_MODE = /^(task|tasks|任务)$/i;   // 要切换到的模式；设为 null 则不切模式、只设 High
   const THINK_LABEL = /^(thinking level|thinking|思考等级|思考级别|思考程度|思考水平)$/i;
   const TARGET = /^(high|高)$/i;
   const TARGET_HINT = /extra thorough|最(为)?(周全|全面|深入)/i;
@@ -100,7 +101,8 @@
       const t = n.nodeValue.trim();
       if (!t || !re.test(t)) continue;
       const el = n.parentElement;
-      if (!el || el.closest(EXCLUDE) || !visible(el)) continue;
+      // 跳过图标字体（例如 mat-icon 里的 "task" 其实是个图标名）
+      if (!el || el.closest(EXCLUDE) || el.closest('mat-icon, gem-icon, [fonticon], .material-symbols-outlined, .google-symbols') || !visible(el)) continue;
       if (!out.includes(el)) out.push(el);
     }
     return out;
@@ -163,6 +165,55 @@
     t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
   }
 
+  // ============ 第一步：切到 Task 模式 ============
+  // 开关状态：菜单项看 aria-checked；按钮/chip 看 aria-pressed / aria-selected / selected 类
+  function isOn(el) {
+    for (const a of ['aria-checked', 'aria-pressed', 'aria-selected']) if (el.hasAttribute(a)) return el.getAttribute(a) === 'true';
+    return /(^|\s)(selected|is-selected|mdc-evolution-chip--selected)(\s|$)/.test(typeof el.className === 'string' ? el.className : '');
+  }
+  const menuOpen = () => [...document.querySelectorAll('[role="menu"], [data-test-id="gem-mode-menu"]')].some(visible);
+  const inputAreaHTML = () => {
+    const a = document.querySelector('input-area-v2, input-container, .input-area-container, .input-area');
+    return a ? a.outerHTML.replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').slice(0, 12000) : '(没找到输入区)';
+  };
+  async function pick(el, boundary, where) {
+    const b = clickTarget(el, boundary);
+    if (isOn(b)) { log('✓ 已经是 Task 模式（' + where + '）'); return true; }
+    log('切到 Task（' + where + '）→', b);
+    tap(b);
+    await sleep(900);
+    return true;
+  }
+  async function selectMode(modelBtn) {
+    if (!TARGET_MODE) return true;
+    let diag = '';
+    // 1) 左上角模式菜单里
+    if (!menuOpen()) { tap(modelBtn); await waitFor(menuOpen, 3000); await sleep(200); }
+    let el = textEls(TARGET_MODE).find(e => e.closest(OVERLAY));
+    if (el) return pick(el, el.closest(OVERLAY), '模式菜单');
+    const m = [...document.querySelectorAll('[data-test-id="gem-mode-menu"], [role="menu"]')].find(visible);
+    if (m) diag += '【模式菜单】\n' + m.outerHTML.replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').slice(0, 8000) + '\n\n';
+    closeMenu(); await waitFor(() => !menuOpen(), 1500); await sleep(200);
+    // 2) 页面上直接可见的按钮 / chip
+    el = textEls(TARGET_MODE).find(e => !e.closest(OVERLAY));
+    if (el) return pick(el, null, '页面按钮');
+    // 3) 输入框旁的 “Tools / 工具” 菜单里
+    const tools = [...document.querySelectorAll('button, [role="button"]')].find(b => visible(b) && !b.closest(EXCLUDE) &&
+      /(^|\s)(tools|工具)$/i.test(((b.innerText || '') + ' ' + (b.getAttribute('aria-label') || '')).trim().split('\n').pop().trim()));
+    if (tools) {
+      log('打开 Tools 菜单 →', tools);
+      tap(tools);
+      el = await waitFor(() => textEls(TARGET_MODE).find(e => e.closest(OVERLAY)), 2500);
+      if (el) return pick(el, el.closest(OVERLAY), 'Tools 菜单');
+      const o = [...document.querySelectorAll(OVERLAY)].find(visible);
+      if (o) diag += '【Tools 菜单】\n' + o.outerHTML.replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').slice(0, 8000) + '\n\n';
+      closeMenu(); await sleep(300);
+    }
+    lastDiag = diag + '【输入区】\n' + inputAreaHTML();
+    log('✗ 没找到 Task 入口，先只设 High。请点“复制诊断”发给我');
+    return false;
+  }
+
   // ============ 主流程（顺序执行，带锁，绝不并发） ============
   let running = false;
   async function run(reason) {
@@ -173,6 +224,9 @@
       const modelBtn = await waitFor(findModelButton, 15000, 250);
       if (!modelBtn) return log('✗ 没找到模型切换按钮');
       log('模型按钮:', modelBtn);
+
+      const modeOk = await selectMode(modelBtn);
+      if (menuOpen() && !findThink()) { closeMenu(); await sleep(300); }
 
       if (!findThink()) {
         tap(modelBtn);
@@ -239,10 +293,13 @@
       const again = findHigh();
       const ok = !again || isChecked(clickTarget(again, (ctx() || { scope: document.body }).scope));
       log(ok ? '✓ 完成，已切到 High' : '? 点了 High，但没看到选中标记，请看一下菜单');
+      if (!modeOk) log('（Task 没切成功，见上面）');
       if (findThink()) closeMenu();
     } catch (e) {
       log('✗ 出错:', e && e.message);
     } finally {
+      // 切模式可能改变网址，避免被当成“新页面”再跑一遍
+      setTimeout(() => { try { lastUrl = location.href; } catch (e) {} }, 0);
       running = false;
     }
   }
