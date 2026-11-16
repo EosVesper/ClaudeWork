@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Gemini Auto High Thinking
 // @namespace    eosvesper.gemini-auto-high
-// @version      6.1
-// @description  打开 Gemini 网页 / 新建对话时，自动切到 Task 模式并把 Thinking level 设为 High（适配 iPad Safari + Stay）
+// @version      6.2
+// @description  打开 Gemini 网页 / 新建对话时，自动切到 Task 模式（切不了 Task 时退回去把 Thinking level 设为 High）（适配 iPad Safari + Stay）
 // @match        https://gemini.google.com/*
 // @run-at       document-idle
 // @grant        none
@@ -16,6 +16,7 @@
   const DEBUG = true;            // 第一次用保持 true：右下角会出现日志框。成功后改成 false
   const ONLY_NEW_CHAT = true;    // true：只在首次加载和“新对话”页面执行；false：每次切换对话都执行
   const TARGET_MODE = /^(task|tasks|任务)$/i;   // 要切换到的模式；设为 null 则不切模式、只设 High
+  const HIGH_FALLBACK = true;    // Task 模式下没有档位。true：没切成 Task 的页面（如已有的 Chat 对话）仍设 High；false：完全不碰档位
   const THINK_LABEL = /^(thinking level|thinking|思考等级|思考级别|思考程度|思考水平)$/i;
   const TARGET = /^(high|高)$/i;
   const TARGET_HINT = /extra thorough|最(为)?(周全|全面|深入)/i;
@@ -270,7 +271,11 @@
       log('模型按钮:', modelBtn);
 
       // 只在新对话页面切 Task（Chat / Task 开关只出现在新对话页）
-      const modeOk = isNewChat() ? await selectMode(modelBtn) : true;
+      const triedMode = !!TARGET_MODE && isNewChat();
+      const modeOk = triedMode ? await selectMode(modelBtn) : true;
+      // Task 模式下没有 Thinking level，切成功就到此结束
+      if (triedMode && modeOk) { log('✓ 完成（Task 模式无档位，不再设置 High）'); return; }
+      if (!HIGH_FALLBACK) { log('结束（未设置档位）'); return; }
 
       // 切模式后顶部按钮可能重新渲染，重新找一次
       const mb = () => findModelButton() || modelBtn;

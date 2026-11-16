@@ -41,3 +41,7 @@
 - Thinking level 和 High 也优先用真实结构的精确选择器（`gem-menu-item[value="thinking_level"]`），文字查找只作兜底。
 - 打开模式菜单后没看到 Thinking level 时，会再点一次模型按钮重试。
 - 只在新对话页面（`/app`）切 Task；打开已有对话时只设 High。
+
+## v6.2：Task 模式下没有档位，只切 Task
+- 新对话页面：切到 Task 后直接结束，不再打开模式菜单。
+- 没切成 Task 的页面（例如打开已有的 Chat 对话）：仍然设 High。不想要这个行为就把 `HIGH_FALLBACK` 改成 `false`。
