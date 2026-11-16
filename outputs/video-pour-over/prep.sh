@@ -1,11 +1,11 @@
 #!/bin/sh
-# 按 timing.py 把每个镜头要用的那一段抽成 30fps 的帧：fr2/<镜头>_NNN.jpg
+# 按 timing.py 把每个镜头要用的那一段变速抽成 30fps 的帧：fr2/<镜头>_NNN.jpg
 # 慢放的镜头用 minterpolate 补帧，其余直接变速
-mkdir -p fr2
+rm -rf fr2; mkdir -p fr2
 python3 -c "
-from timing import SHOTS, BEAT
-for name, n, ss, use, *_ in SHOTS:
-    print(name, ss, use, use / (n * BEAT))
+from timing import SHOTS, speed
+for i, (name, n, ss, use, *_) in enumerate(SHOTS):
+    print(name, ss, use, speed(i))
 " | while read name ss use speed; do
   slow=$(python3 -c "print(1 if $speed < 0.95 else 0)")
   if [ "$slow" = 1 ]; then vf="setpts=PTS/$speed,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:vsbmc=1"

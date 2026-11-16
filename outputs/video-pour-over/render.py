@@ -1,4 +1,5 @@
-"""练习 5《一杯手冲咖啡》：8 个镜头卡点快剪 + 弹出文字 + 片尾。
+"""练习 5《一杯手冲咖啡》v2 舒缓版：8 个镜头 + 叠化 + 匀速慢推 + 淡入文字 + 片尾。
+（v1 卡点快剪版在 v1/ 里）
 先运行 sh prep.sh 抽帧到 fr2/。
   python3 render.py preview t1 t2 ...   -> contact.png
   python3 render.py render [场景号...]  -> video.mp4（无声）
@@ -6,13 +7,13 @@
 import glob, os, subprocess, sys
 from multiprocessing import Pool
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from timing import SHOTS, DUR, ST, TOTAL, BEAT, END_AT
+from timing import SHOTS, DUR, ST, TOTAL, XF, END_AT
 
 W, H, FPS = 1080, 1920, 30
 HERE = os.path.dirname(os.path.abspath(__file__))
 FONT = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 SERIF = "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc"
-TEXT_Y = 1430
+TEXT_Y = 1440
 ACCENT = (255, 196, 120)
 
 def font(s, path=FONT, _c={}):
@@ -29,11 +30,10 @@ def nframes(name):
 
 def scene_frame(i, T):
     name = SHOTS[i][0]
-    u = T - ST[i]
+    u = T - ST[i] + (XF if i else 0)                              # 提前 XF 秒开始，用于叠化
     k = min(nframes(name), max(1, int(round(u * FPS)) + 1))      # 帧用完后停在最后一帧（C8 的定格）
     src = Image.open(os.path.join(HERE, "fr2", f"{name}_{k:03d}.jpg")).convert("RGB")
-    # 运镜：切入瞬间"顿"一下（放大 6% 后 0.25 秒内弹回），之后整镜慢推 4%
-    z = 1 + 0.06 * (1 - ease(u / 0.25)) + 0.04 * (u / DUR[i])
+    z = 1 + 0.05 * u / (DUR[i] + XF)                             # 整镜匀速慢推 5%，没有任何突然的动作
     w, h = src.size
     S = W / w * z
     ww, wh = W / S, H / S
@@ -42,19 +42,16 @@ def scene_frame(i, T):
 
 _txt = {}
 def text_layer(big, small):
-    """大字 + 小字，带柔和阴影，画在一张透明图上（中心在图的中心）。"""
+    """大字（宋体）+ 小字，带柔和阴影，画在一张透明图上。"""
     if (big, small) not in _txt:
-        L = Image.new("RGBA", (W, 420), (0, 0, 0, 0))
+        L = Image.new("RGBA", (W, 360), (0, 0, 0, 0))
         d = ImageDraw.Draw(L)
-        d.text((W / 2, 150), big, font=font(150), fill=(0, 0, 0, 200), anchor="mm")
-        if small: d.text((W / 2, 300), small, font=font(58), fill=(0, 0, 0, 200), anchor="mm")
-        L = L.filter(ImageFilter.GaussianBlur(14))
+        d.text((W / 2, 130), big, font=font(112, SERIF), fill=(0, 0, 0, 170), anchor="mm")
+        if small: d.text((W / 2, 250), small, font=font(46), fill=(0, 0, 0, 170), anchor="mm")
+        L = L.filter(ImageFilter.GaussianBlur(16))
         d = ImageDraw.Draw(L)
-        d.text((W / 2, 150), big, font=font(150), fill=(255, 255, 255, 255), anchor="mm",
-               stroke_width=3, stroke_fill=(30, 18, 8, 200))
-        if small:
-            d.text((W / 2, 300), small, font=font(58), fill=ACCENT + (255,), anchor="mm",
-                   stroke_width=3, stroke_fill=(30, 18, 8, 200))
+        d.text((W / 2, 130), big, font=font(112, SERIF), fill=(255, 244, 226, 255), anchor="mm")
+        if small: d.text((W / 2, 250), small, font=font(46), fill=ACCENT + (255,), anchor="mm")
         _txt[(big, small)] = L
     return _txt[(big, small)]
 
@@ -62,16 +59,13 @@ def with_alpha(layer, k):
     if k >= 1: return layer
     c = layer.copy(); c.putalpha(c.getchannel("A").point(lambda v: int(v * k))); return c
 
-def paste_pop(img, layer, u, dur):
-    """文字在镜头切入后第 0.1 秒弹出：从 60% 放大到 108% 再回到 100%，镜头结束前淡出。"""
-    p = (u - 0.1) / 0.28
-    if p <= 0: return
-    p = clamp(p)
-    s = 0.6 + 0.48 * ease(p / 0.7) if p < 0.7 else 1.08 - 0.08 * ease((p - 0.7) / 0.3)
-    a = min(clamp(p / 0.4), clamp((dur - u) / 0.12))
-    L = layer if abs(s - 1) < 1e-3 else layer.resize((int(layer.width * s), int(layer.height * s)), Image.BICUBIC)
-    L = with_alpha(L, a)
-    img.paste(L, ((W - L.width) // 2, TEXT_Y - L.height // 2), L)
+def paste_text(img, layer, u, dur):
+    """文字在镜头开始 0.3 秒后慢慢淡入（同时上浮 24 像素），镜头结束前 0.2 秒淡完。"""
+    a = min(ease((u - 0.3) / 0.6), ease((dur - 0.2 - u) / 0.5))
+    if a <= 0: return
+    L = with_alpha(layer, a)
+    y = TEXT_Y - L.height // 2 + int(24 * (1 - ease((u - 0.3) / 0.9)))
+    img.paste(L, (0, y), L)
 
 _end = None
 def end_layer():
@@ -88,15 +82,17 @@ def end_layer():
 def frame_at(T):
     n = len(DUR)
     i = min(n - 1, max(k for k in range(n) if ST[k] <= T + 1e-9))
-    img = scene_frame(i, T)                    # 硬切，不叠化
+    img = scene_frame(i, T)
+    if i + 1 < n and ST[i + 1] - T < XF:       # 和下一镜叠化
+        img = Image.blend(img, scene_frame(i + 1, T), ease(1 - (ST[i + 1] - T) / XF))
     u = T - ST[i]
     big, small = SHOTS[i][4], SHOTS[i][5]
-    if big: paste_pop(img, text_layer(big, small), u, DUR[i])
-    k = ease((T - END_AT) / 0.6)               # 片尾：压暗 + 标题
+    if big: paste_text(img, text_layer(big, small), u, DUR[i])
+    k = ease((T - END_AT) / 1.2)               # 片尾：压暗 + 标题
     if k > 0:
         img = Image.blend(img, Image.new("RGB", (W, H), (14, 8, 3)), 0.6 * k)
         t = with_alpha(end_layer(), k); img.paste(t, (0, 0), t)
-    f = min(clamp(T / 0.4), clamp((TOTAL - T) / 0.6))
+    f = min(ease(T / 1.0), ease((TOTAL - T) / 1.2))
     if f < 1: img = Image.blend(Image.new("RGB", (W, H), (0, 0, 0)), img, f)
     return img
 
