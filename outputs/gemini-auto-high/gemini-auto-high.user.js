@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Gemini Auto High Thinking
 // @namespace    eosvesper.gemini-auto-high
-// @version      5.1
+// @version      5.2
 // @description  打开 Gemini 网页 / 新建对话时，自动把 Thinking level 设为 High（适配 iPad Safari + Stay）
 // @match        https://gemini.google.com/*
 // @run-at       document-idle
 // @grant        none
+// @inject-into  content
 // ==/UserScript==
 
 (function () {
