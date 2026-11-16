@@ -30,3 +30,11 @@ AI 图片 + 配音 → 推拉运镜、叠化、烧录字幕、片尾字卡。
 - `audio.py`：`python3 audio.py voice.mp3` 重排配音，并用 numpy 合成室外/室内两种雨声和八音盒配乐，输出 `mix.m4a`
 - 合成：`ffmpeg -i video.mp4 -i mix.m4a -map 0:v -map 1:a -c copy out.mp4`
 - v2（代码补救素材瑕疵）：S2、S3 只取没出问题的一小段，用 `minterpolate` 放慢补帧（命令在 `render.py` 开头）；S3、S4 用 `CAM` 推近，把伞面、背景小伞、蓝袖子裁出画面
+
+## video-pour-over/ — 练习 5《一杯手冲咖啡》
+8 个图生视频镜头的卡点快剪，没有配音，画面文字 + 代码合成的 100 BPM 配乐。
+- `timing.py`：每个镜头占几拍、用素材的哪一段、屏幕上的字；改这里就能换节奏和文案
+- `prep.sh`：按 `timing.py` 把每段素材变速抽帧到 `fr2/`（慢放的用 `minterpolate` 补帧）
+- `render.py`：硬切 + 切入时"顿"一下的运镜 + 弹出文字 + 片尾，用法同前
+- `audio.py`：`python3 audio.py` 合成鼓、贝斯、电钢琴、旋律和动作音效，输出 `mix.m4a`
+- 合成：`ffmpeg -i video.mp4 -i mix.m4a -map 0:v -map 1:a -c copy out.mp4`
