@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gemini Auto High Thinking
 // @namespace    eosvesper.gemini-auto-high
-// @version      6.0
+// @version      6.1
 // @description  打开 Gemini 网页 / 新建对话时，自动切到 Task 模式并把 Thinking level 设为 High（适配 iPad Safari + Stay）
 // @match        https://gemini.google.com/*
 // @run-at       document-idle
@@ -75,13 +75,39 @@
   }
 
   // ============ 工具 ============
+  const isNewChat = () => /^\/(u\/\d+\/)?app\/?$/.test(location.pathname) || /^\/(u\/\d+\/)?gem\/[^/]+\/?$/.test(location.pathname);
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   function visible(el) {
     if (!el || !el.isConnected) return false;
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return false;
-    const s = getComputedStyle(el);
-    return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0';
+    return getComputedStyle(el).visibility !== 'hidden';
+  }
+  const hasBox = el => { if (!el || !el.isConnected) return false; const r = el.getBoundingClientRect(); return r.width > 0 || r.height > 0; };
+  const txt = el => ((el && el.textContent) || '').trim();
+  // 调试用：统计页面上匹配的文字节点总数（不管可见与否）
+  function rawCount(re) {
+    let n = 0, t; const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while ((t = w.nextNode())) if (re.test(t.nodeValue.trim()) && !(t.parentElement && t.parentElement.closest('#gah-log'))) n++;
+    return n;
+  }
+
+  // ============ 按真实页面结构的精确查找（优先使用） ============
+  // Task：输入框上方的 Chat / Task 分段开关
+  function exactTask() {
+    if (!TARGET_MODE) return null;
+    const seg = [...document.querySelectorAll('chat-spark-toggle gem-segmented-button, gem-segmented-button-row gem-segmented-button')]
+      .find(x => TARGET_MODE.test(txt(x)) && hasBox(x));
+    return seg ? { seg, btn: seg.querySelector('button') || seg, on: seg.classList.contains('gem-segmented-button-selected') } : null;
+  }
+  // Thinking level 菜单项，以及它里面的 High 选项
+  const exactThink = () => [...document.querySelectorAll('gem-menu-item[value="thinking_level"]')].find(hasBox) || null;
+  function exactHigh() {
+    const item = exactThink();
+    if (!item) return null;
+    const o = [...item.querySelectorAll('.expand-content gem-menu-item, .expand-content [role="menuitemradio"]')]
+      .find(x => TARGET.test(txt(x.querySelector('.label') || x)) && hasBox(x));
+    return o ? (o.querySelector('.label') || o) : null;
   }
   async function waitFor(fn, timeout = 4000, interval = 100) {
     const end = Date.now() + timeout;
@@ -140,7 +166,11 @@
       (b.hasAttribute('aria-haspopup') || b.querySelector('mat-icon, svg')) &&
       /gemini|hydrogen|flash|pro\b|thinking|fast|everyday/i.test(b.innerText || ''));
   }
-  const findThink = () => textEls(THINK_LABEL).find(e => e.closest(OVERLAY)) || textEls(THINK_LABEL)[0];
+  const findThink = () => {
+    const ex = exactThink();
+    if (ex) return ex.querySelector('.label') || ex;
+    return textEls(THINK_LABEL).find(e => e.closest(OVERLAY)) || textEls(THINK_LABEL)[0];
+  };
   // 每次都重新查，防止页面重新渲染后拿着旧元素
   function ctx() {
     const think = findThink();
@@ -149,6 +179,8 @@
     return { think, scope, header: clickTarget(think, scope) };
   }
   function findHigh() {
+    const exh = exactHigh();
+    if (exh) return exh;
     const c0 = ctx();
     if (!c0) return null;
     const { scope, header } = c0;
@@ -187,16 +219,28 @@
   async function selectMode(modelBtn) {
     if (!TARGET_MODE) return true;
     let diag = '';
+    // 0) 精确路径：输入框上方的 Chat / Task 开关（不需要打开任何菜单）
+    const ex = await waitFor(exactTask, 4000, 200);
+    if (ex) {
+      if (ex.on) { log('✓ 已经是 Task 模式'); return true; }
+      log('切到 Task →', ex.btn);
+      tap(ex.btn);
+      const on = await waitFor(() => { const e = exactTask(); return e && e.on; }, 2500);
+      log(on ? '✓ 已切到 Task' : '? 点了 Task，但没看到选中状态');
+      await sleep(500);
+      return !!on;
+    }
+    // 0.5) 页面上直接可见的 Task 按钮
+    let el = textEls(TARGET_MODE).find(e => !e.closest(OVERLAY));
+    if (el) return pick(el, null, '页面按钮');
+    log('页面上 "Task" 文字节点数: ' + rawCount(TARGET_MODE));
     // 1) 左上角模式菜单里
     if (!menuOpen()) { tap(modelBtn); await waitFor(menuOpen, 3000); await sleep(200); }
-    let el = textEls(TARGET_MODE).find(e => e.closest(OVERLAY));
+    el = textEls(TARGET_MODE).find(e => e.closest(OVERLAY));
     if (el) return pick(el, el.closest(OVERLAY), '模式菜单');
     const m = [...document.querySelectorAll('[data-test-id="gem-mode-menu"], [role="menu"]')].find(visible);
     if (m) diag += '【模式菜单】\n' + m.outerHTML.replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').slice(0, 8000) + '\n\n';
     closeMenu(); await waitFor(() => !menuOpen(), 1500); await sleep(200);
-    // 2) 页面上直接可见的按钮 / chip
-    el = textEls(TARGET_MODE).find(e => !e.closest(OVERLAY));
-    if (el) return pick(el, null, '页面按钮');
     // 3) 输入框旁的 “Tools / 工具” 菜单里
     const tools = [...document.querySelectorAll('button, [role="button"]')].find(b => visible(b) && !b.closest(EXCLUDE) &&
       /(^|\s)(tools|工具)$/i.test(((b.innerText || '') + ' ' + (b.getAttribute('aria-label') || '')).trim().split('\n').pop().trim()));
@@ -225,15 +269,24 @@
       if (!modelBtn) return log('✗ 没找到模型切换按钮');
       log('模型按钮:', modelBtn);
 
-      const modeOk = await selectMode(modelBtn);
-      if (menuOpen() && !findThink()) { closeMenu(); await sleep(300); }
+      // 只在新对话页面切 Task（Chat / Task 开关只出现在新对话页）
+      const modeOk = isNewChat() ? await selectMode(modelBtn) : true;
 
-      if (!findThink()) {
-        tap(modelBtn);
-        await waitFor(findThink, 3000);
+      // 切模式后顶部按钮可能重新渲染，重新找一次
+      const mb = () => findModelButton() || modelBtn;
+      // 打开模式菜单：点一下没出现就再点一下（第一下可能是把残留的菜单关掉了）
+      for (let i = 0; i < 3 && !findThink(); i++) {
+        if (i) log('菜单里没出现 Thinking level，再点一次模型按钮');
+        tap(mb());
+        await waitFor(findThink, 2500);
       }
       let c = ctx();
-      if (!c) { log('✗ 打开菜单后没看到 "Thinking level"（当前模型可能不支持档位）'); closeMenu(); return; }
+      if (!c) {
+        log('✗ 打开菜单后没看到 "Thinking level"。页面上该文字节点数: ' + rawCount(THINK_LABEL) + '，菜单打开: ' + menuOpen());
+        const o = [...document.querySelectorAll(OVERLAY)].filter(hasBox).map(x => x.outerHTML).join('\n');
+        lastDiag = ('【当前弹层】\n' + (o || '(无)')).replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').slice(0, 15000);
+        closeMenu(); return;
+      }
       log('Thinking 行:', c.header);
 
       // 标题行上直接显示当前档位为 High（折叠状态）→ 直接收起
@@ -305,7 +358,6 @@
   }
 
   // ============ 触发时机 ============
-  const isNewChat = () => /^\/(u\/\d+\/)?app\/?$/.test(location.pathname) || /^\/(u\/\d+\/)?gem\/[^/]+\/?$/.test(location.pathname);
   // 书签版重复点击时只重跑一次，不重复挂监听
   if (window.__geminiAutoHigh) { window.__geminiAutoHigh('manual'); return; }
   window.__geminiAutoHigh = run;

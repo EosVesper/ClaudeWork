@@ -35,3 +35,9 @@
 - 已经在 Task 模式时不会重复点（重复点可能把它关掉）。
 - 找不到 Task 时仍然会设 High，并在日志里提示。点“复制诊断”把内容发给 Claude 即可精确适配。
 - 不想切模式时，把脚本开头的 `TARGET_MODE` 改成 `null`。
+
+## v6.1：按真实页面结构适配 Task
+- Task 不在模式菜单里，而是输入框上方的 **Chat / Task 分段开关**（`chat-spark-toggle`）。现在直接点这个开关，不再为了找 Task 去开关菜单。
+- Thinking level 和 High 也优先用真实结构的精确选择器（`gem-menu-item[value="thinking_level"]`），文字查找只作兜底。
+- 打开模式菜单后没看到 Thinking level 时，会再点一次模型按钮重试。
+- 只在新对话页面（`/app`）切 Task；打开已有对话时只设 High。
