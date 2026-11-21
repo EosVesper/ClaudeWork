@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="液体与固体火箭发动机燃烧室、喷管热力计算及工况验证">
+  <title>火箭发动机热力计算工作台</title>
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-inner">
+      <a class="brand" href="/" aria-label="热力计算工作台首页">
+        <img width="34" height="34" src="/icon.svg" alt="">
+        <span>热力计算工作台</span>
+      </a>
+      <div class="health"><span class="status-dot" id="connection-dot"></span><span id="connection">连接本地求解器</span></div>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="masthead">
+      <div>
+        <p class="kicker">推进系统热力分析</p>
+        <h1>火箭发动机热力计算</h1>
+        <p class="subtitle">化学平衡 · 喷管膨胀 · 工况验证</p>
+      </div>
+      <div class="mast-meta">
+        <span class="meta-label">当前结果</span>
+        <strong id="case-title">等待求解</strong>
+        <span id="case-detail">燃烧室与喷管一体化计算</span>
+      </div>
+    </section>
+    <div class="layout">
+      <aside class="setup">
+        <form id="case-form" class="panel form-panel">
+          <div class="panel-top setup-title"><div><p class="kicker">输入参数</p><h2>计算工况</h2></div><button type="button" class="text-button" id="reset">恢复默认</button></div>
+          <div class="toggle" aria-label="推进剂类型">
+            <label><input name="kind" type="radio" value="liquid" checked><span>液体发动机</span></label>
+            <label><input name="kind" type="radio" value="solid"><span>固体算例</span></label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary" id="run">运行计算</button>
+            <button type="button" class="secondary" id="run-range">计算工况区间</button>
+          </div>
+          <div id="run-status" class="run-status" role="status" aria-live="polite">正在读取发动机预设…</div>
+          <fieldset id="liquid-fields">
+            <label class="field full">发动机预设<select id="preset" name="preset"></select></label>
+            <p id="preset-source" class="source-note"></p>
+            <div class="form-grid">
+              <label class="field">氧化剂<select id="oxidizer" name="oxidizer"></select></label>
+              <label class="field">燃料<select id="fuel" name="fuel"></select></label>
+              <label class="field">氧化剂温度<div class="unit-input"><input type="number" name="tox" step="any" min="1" required><span class="math">K</span></div></label>
+              <label class="field">燃料温度<div class="unit-input"><input type="number" name="tfuel" step="any" min="1" required><span class="math">K</span></div></label>
+              <label class="field full">氧燃质量比<div class="unit-input"><input type="number" name="of" step="any" min="0.01" required><span class="math"><i>O</i>/<i>F</i></span></div></label>
+            </div>
+          </fieldset>
+          <fieldset id="solid-fields" hidden disabled>
+            <div class="form-grid">
+              <label class="field">固体配方<select id="solid" name="solid"></select></label>
+              <label class="field">推进剂初温<div class="unit-input"><input type="number" name="tin" value="298.15" step="any" min="1" required><span class="math">K</span></div></label>
+            </div>
+          </fieldset>
+          <fieldset class="form-grid common-fields">
+            <label class="field">燃烧室绝对压强<div class="unit-input"><input type="number" name="pc" step="any" min="0.001" required><span class="math">MPa</span></div></label>
+            <label class="field">主推力室流量<div class="unit-input"><input type="number" name="mdot" step="any" min="0" required><span class="math">kg/s</span></div></label>
+            <label class="field">出口设定<select id="exit-mode" name="exitMode"><option value="eps">面积比</option><option value="pe">出口压强</option><option value="pr">出口／室压</option><option value="mach">出口马赫数</option></select></label>
+            <label class="field"><span id="exit-label">出口面积比</span><div class="unit-input"><input type="number" name="exitValue" step="any" required><span id="exit-unit" class="math"><i>A</i><sub>e</sub>/<i>A</i><sub>t</sub></span></div></label>
+            <label class="field">环境绝对压强<div class="unit-input"><input type="number" name="pa" step="any" min="0" required><span class="math">kPa</span></div></label>
+            <label class="field">膨胀模型<select id="model" name="model"></select></label>
+          </fieldset>
+          <details class="advanced">
+            <summary>高级设置与热损失</summary>
+            <div class="form-grid">
+              <label class="field">喉部判据<select name="throat"><option value="sonic">声速</option><option value="gamma">临界压强比</option><option value="massflux">最大质量流率</option></select></label>
+              <label class="field">剖面采样点<div class="unit-input"><input type="number" name="points" value="41" min="9" max="151" step="1" required><span>点</span></div></label>
+              <label class="field" data-heat>基准热损失<div class="unit-input"><input type="number" name="heat" value="0" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
+              <label class="field" data-heat>热损失上限<div class="unit-input"><input type="number" name="heatMax" value="300" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
+            </div>
+            <p class="source-note">液发热损失按每千克产物计。默认上限是敏感性假设，可用有来源的工况覆盖。</p>
+          </details>
+        </form>
+      </aside>
+      <div class="workspace">
+        <nav class="tabs" id="tabs" aria-label="热力结果">
+          <button type="button" data-tab="overview" aria-current="page">结果总览</button>
+          <button type="button" data-tab="process">求解过程</button>
+          <button type="button" data-tab="field">彩色流场与 3D</button>
+          <button type="button" data-tab="validation">区间与验证</button>
+          <button type="button" data-tab="compare">工况对比 <span id="compare-count"></span></button>
+        </nav>
+        <div id="result-panel" tabindex="-1" aria-busy="true">
+          <section class="panel initial">
+            <div class="spinner" aria-hidden="true"></div>
+            <h2>正在读取本地求解器</h2>
+            <p>首个工况算完后，状态表和图表会自动显示。</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+  <p id="export-status" class="export-status" role="status" aria-live="polite" hidden></p>
+  <footer class="footer"><span>九系数热力数据库 · C 求解器</span><span>稳态准一维模型</span></footer>
+</body>
+</html>

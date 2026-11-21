@@ -1,0 +1,6 @@
+# Large third-party runtime DLLs live in the full package on Google Drive
+solver/vendor/coolprop/CoolProp.dll
+solver/vendor/coolprop/libstdc++-6.dll
+# Per-run scratch directories created by engine.mjs
+solver/runtime/
+node_modules/
