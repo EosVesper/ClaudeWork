@@ -75,10 +75,10 @@
             <div class="form-grid">
               <label class="field">喉部判据<select name="throat"><option value="sonic">声速</option><option value="gamma">临界压强比</option><option value="massflux">最大质量流率</option></select></label>
               <label class="field">剖面采样点<div class="unit-input"><input type="number" name="points" value="41" min="9" max="151" step="1" required><span>点</span></div></label>
-              <label class="field" data-heat>基准热损失<div class="unit-input"><input type="number" name="heat" value="0" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
-              <label class="field" data-heat>热损失上限<div class="unit-input"><input type="number" name="heatMax" value="300" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
+              <label class="field" data-heat>基准壁面净热损失<div class="unit-input"><input type="number" name="heat" value="0" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
+              <label class="field" data-heat>区间热损失上限（可选）<div class="unit-input"><input type="number" name="heatMax" value="0" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
             </div>
-            <p class="source-note">液发热损失按每千克产物计。默认上限是敏感性假设，可用有来源的工况覆盖。</p>
+            <p class="source-note">按每千克产物计，默认 0。再生冷却时壁面热流大部分回到推进剂，不宜整体计为损失。只有需要做热损失敏感性分析时才填上限；实际性能损失请在「区间与验证」页的损失因子中设置。</p>
           </details>
         </form>
       </aside>
@@ -90,6 +90,7 @@
           <button type="button" data-tab="validation">区间与验证</button>
           <button type="button" data-tab="compare">工况对比 <span id="compare-count"></span></button>
         </nav>
+        <p id="stale-banner" class="notice stale" role="status" hidden>输入已修改，下方仍是上一次的计算结果。点「运行计算」或「计算工况区间」更新。</p>
         <div id="result-panel" tabindex="-1" aria-busy="true">
           <section class="panel initial">
             <div class="spinner" aria-hidden="true"></div>

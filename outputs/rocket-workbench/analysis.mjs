@@ -14,26 +14,50 @@ export const metrics = [
 const landspace = 'https://www.landspace.com/news-detail.html?itemid=46';
 const sse = 'https://static.sse.com.cn/stock/disclosure/announcement/c/202512/002174_20251231_1QK0.pdf#page=211';
 const caltPaper = 'https://castjournals.cast.org.cn/joweb/qzkj/EN/1241716665260495476';
+// Public values. `basis` states what the number describes so the UI never
+// compares a main-chamber model against a whole-engine figure silently.
 const benchmarks = {
   'TQ-12B': [
-    { metric: 'thrust', value: 1000, condition: '海平面 · 单台 B 型公开设计值', source: '蓝箭航天型号发布', url: landspace },
-    { metric: 'isp', value: 293, condition: '海平面 · B 型公开额定值', source: '蓝箭航天招股书 1-1-210 页', url: sse },
+    { metric: 'thrust', value: 1000, condition: '海平面 · 单台整机', basis: '设计指标（2023 年型号发布；招股书表列 102 吨）', source: '蓝箭航天型号发布', url: landspace },
+    { metric: 'isp', value: 293, condition: '海平面 · 单台整机', basis: '招股书「根据公开数据整理」，与 TQ-12A 同列 293 s；B 型处于整机试车阶段', source: '蓝箭航天招股书 1-1-210 页', url: sse },
   ],
   'TQ-15B': [
-    { metric: 'thrustVac', value: 1183, condition: '真空 · 单台 B 型公开设计值', source: '蓝箭航天型号发布', url: landspace },
-    { metric: 'ispVac', value: 3500 / gravity, original: '3500 m/s', condition: '真空 · B 型公开设计值', source: '蓝箭航天型号发布', url: landspace },
+    { metric: 'thrustVac', value: 1183, condition: '真空 · 单台整机', basis: '设计指标（2023 年型号发布；遥一飞行使用 TQ-15A）', source: '蓝箭航天型号发布', url: landspace },
+    { metric: 'ispVac', value: 3500 / gravity, original: '3500 m/s', condition: '真空 · 单台整机', basis: '设计指标（2023 年型号发布）', source: '蓝箭航天型号发布', url: landspace },
   ],
   'YF-100K': [
-    { metric: 'thrust', value: 1250, condition: '海平面 · YF-100K 系列文献值', source: '李斌（2022）表 1', url: caltPaper },
-    { metric: 'isp', value: 302, condition: '海平面 · YF-100K 系列文献值', source: '李斌（2022）表 1', url: caltPaper },
+    { metric: 'thrust', value: 1250, condition: '海平面 · 单台整机', basis: '系列文献值（未取得原文逐字核对）', source: '李斌（2022）表 1', url: caltPaper },
+    { metric: 'isp', value: 302, condition: '海平面 · 单台整机', basis: '系列文献值（未取得原文逐字核对）', source: '李斌（2022）表 1', url: caltPaper },
   ],
 };
 
+// Engine cycle per preset. A gas-generator engine dumps turbine exhaust, so
+// whole-engine Isp is below main-chamber Isp; staged combustion routes all
+// flow through the main chamber.
+export const engineCycles = {
+  'TQ-12B': { cycle: 'gg', label: '燃气发生器循环', source: '蓝箭航天招股书 1-1-210 页', url: sse },
+  'TQ-15B': { cycle: 'gg', label: '燃气发生器循环', source: '天鹊系列同属燃气发生器循环（招股书 1-1-210 页）', url: sse },
+  'YF-100K': { cycle: 'staged', label: '高压补燃（富氧分级燃烧）循环', source: '招股书 1-1-210 页 YF-100 列', url: sse },
+};
+
+// Independent check of the ideal solution: Cantera 3.2 (NASA-9 gas data),
+// tools/cantera_crosscheck.py, liquid reactant enthalpies from thermo.inp.
+export const independentReference = {
+  tool: 'Cantera 3.2 · tools/cantera_crosscheck.py',
+  cases: {
+    'TQ-12B': { eq: { temperature: 3499.9, cstar: 1876.98, isp: 323.82, ispVac: 352.22, exitPressure: 70.47 }, fc: { cstar: 1847.79, isp: 312.77, ispVac: 340.72, exitPressure: 62.81 } },
+    'TQ-15B': { eq: { temperature: 3499.9, cstar: 1876.98, isp: 367.66, ispVac: 367.66, exitPressure: 22.17 }, fc: { cstar: 1847.79, isp: 354.04, ispVac: 354.04, exitPressure: 19.02 } },
+    'YF-100K': { eq: { temperature: 3817.5, cstar: 1811.96, isp: 321.11, ispVac: 356.15, exitPressure: 52.29 }, fc: { cstar: 1775.15, isp: 300.92, ispVac: 335.24, exitPressure: 41.12 } },
+  },
+};
+
 export const benchmarkContext = [
-  { description: '朱雀三号遥一采用天鹊 A 型。此处采用 B 型公开设计口径。', label: '蓝箭航天遥一通报', url: 'https://www.landspace.com/news-detail.html?itemid=66' },
+  { description: '朱雀三号遥一（2025-12）采用天鹊 12A/15A；此处 B 型数据为 2023 年发布的设计指标。', label: '蓝箭航天遥一通报', url: 'https://www.landspace.com/news-detail.html?itemid=66' },
+  { description: '招股书第 1-1-210 页列出天鹊-12B：燃气发生器循环，海平面推力 102 吨，海平面比冲 293 秒，混合比 2.9，进展为整机试车。', label: '蓝箭航天招股书', url: sse },
   { description: '长征十号乙首飞公开的起飞推力属于整箭。YF-100K 比对采用系列文献的单机口径。', label: '火箭院长十乙首飞通报', url: 'https://calt.spacechina.com/n689/c2573694/content.html' },
+  { description: '燃气发生器循环比冲损失 δIsp/Isp ≈ (ṁ_GG/ṁ)(1 − c_GG/c)；F-1 算例约 1.1%。', label: 'MIT 16.512 第 25 讲（Martinez-Sanchez）', url: 'https://ocw.mit.edu/courses/16-512-rocket-propulsion-fall-2005/8b2220397190eb677d156c4b486dd069_lecture_25.pdf' },
+  { description: '交付比冲按各损失效率连乘；燃烧室综合效率约 98% 为常见值；动力学损失由喷管尺寸主导。', label: 'RocketIsp 效率文档', url: 'https://rocketisp.readthedocs.io/en/latest/efficiencies.html' },
   { description: '给定环境推力按动量项与压强项复算，比冲按标准重力加速度换算。', label: 'NASA Glenn 推力方程', url: 'https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/rocket-thrust-equation/' },
-  { description: '化学平衡与组分冻结是两类膨胀模型。热损失上限由用户设定，默认值用于展示敏感性。', label: 'NASA CEA 方法概览', url: 'https://ntrs.nasa.gov/citations/20240010609' },
 ];
 
 export function summarize(result) {
@@ -117,26 +141,65 @@ export function sampledBounds(cases, expected, main) {
   });
 }
 
+function nominalInput(input, preset) {
+  const same = keys => preset && keys.every(key => input[key] === preset[key]);
+  return {
+    // Specific quantities (Isp, c*) do not depend on mass flow.
+    specific: Boolean(same(['oxidizer','fuel','pc','of','tox','tfuel'])
+      && input.exitMode === 'eps' && input.exitValue === preset.eps),
+    flow: Boolean(same(['mdot'])) && input.mdot > 0,
+  };
+}
+
 export function comparePublic(input, preset, main, bounds) {
   const refs = benchmarks[input.preset] ?? [];
-  const nominalGeometry = preset
-    && ['oxidizer','fuel','pc','of','tox','tfuel','mdot'].every(key => input[key] === preset[key])
-    && input.exitMode === 'eps' && input.exitValue === preset.eps;
+  const nominal = nominalInput(input, preset);
   return refs.map(ref => {
     const meta = metrics.find(metric => metric.id === ref.metric);
     const computed = main.summary[ref.metric];
-    const comparable = Boolean(nominalGeometry
-      && (ref.metric.endsWith('Vac') || input.pa === 101325));
+    const isThrust = ref.metric.startsWith('thrust');
+    const ambient = ref.metric.endsWith('Vac') || input.pa === 101325;
+    const comparable = nominal.specific && ambient && (!isThrust || nominal.flow);
     const bound = bounds.find(item => item.id === ref.metric);
     return {
       ...ref, label: meta.label, unit: meta.unit, digits: meta.digits,
-      computed, comparable,
+      computed, comparable, thrust: isThrust,
+      reason: comparable ? '' : !nominal.specific ? '推进剂、室压或面积比与预设不同'
+        : !ambient ? '环境压强与公开值口径不同' : '主推力室流量未知或已修改',
       deltaPercent: comparable && Number.isFinite(computed)
         ? 100 * (computed / ref.value - 1) : null,
       inBounds: comparable && bound?.complete
         ? contains(ref.value, bound.low, bound.high) : null,
     };
   });
+}
+
+// Mass flow implied by a public thrust and Isp quoted at the same condition.
+export function impliedFlow(presetId, mdot) {
+  const refs = benchmarks[presetId] ?? [];
+  const pairs = [['thrust','isp'],['thrustVac','ispVac']];
+  for (const [f, i] of pairs) {
+    const F = refs.find(ref => ref.metric === f);
+    const I = refs.find(ref => ref.metric === i);
+    if (F && I) {
+      const total = F.value * 1000 / (I.value * gravity);
+      return { total, condition: F.condition, ratio: mdot > 0 ? mdot / total : null };
+    }
+  }
+  return null;
+}
+
+export function referenceCheck(input, preset, main) {
+  const ref = independentReference.cases[input.preset];
+  const nominal = nominalInput(input, preset);
+  if (!ref || !nominal.specific || main.heat !== 0 || input.pa !== preset.pa
+    || input.throat !== 'sonic') return null;
+  const model = main.model === 'fc' ? 'fc' : main.model === 'eq' ? 'eq' : null;
+  if (!model) return null;
+  return { tool: independentReference.tool, model, rows: Object.entries(ref[model]).map(([id, value]) => ({
+    id, reference: value, computed: main.summary[id],
+    deltaPercent: Number.isFinite(main.summary[id]) ? 100 * (main.summary[id] / value - 1) : null,
+  })) };
 }
 
 export function audit(input, result, trace) {
@@ -156,8 +219,11 @@ export function audit(input, result, trace) {
     ['有效排气速度复算偏差', exhaust === null ? null : Math.abs(exhaust - perf.Isp_m_s), 0.01, 'm/s'],
     ['推力复算偏差', exhaust === null || input.mdot === 0 ? null : Math.abs(exhaust * input.mdot - perf.F_N), 2, 'N'],
   ];
+  // These quantities are imposed by the solver (isentropic marching, sonic
+  // throat search), so a zero deviation confirms bookkeeping, not physics.
+  const imposed = new Set(['重建燃烧室熵偏差', '喷管截面熵最大偏差', '喉部声速条件 |Ma − 1|']);
   return equilibrium.map(([label, value, limit, unit]) => ({
-    label, value, limit, unit,
+    label, value, limit, unit, construct: imposed.has(label),
     status: !Number.isFinite(value) ? 'na' : value <= limit ? 'pass' : 'review',
   }));
 }

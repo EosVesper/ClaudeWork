@@ -1,5 +1,6 @@
 import { caption, colors, extent, format, heatmap, linearChart, nozzleGeometry, nozzleMap, nozzleSurface, surface } from './charts.mjs';
 import { mathHtml as m, mathText, numericSource, unitSource } from './math.mjs';
+import { defaultLosses, divergence, envelope, envelopeMetrics, judgePublic, lossFactors, validLosses } from './losses.mjs';
 
 const $ = selector => document.querySelector(selector);
 const form = $('#case-form');
@@ -8,10 +9,10 @@ const stageLabels = { scan: '搜索温区', brent: 'Brent 求根', final: '最�
 const modelColors = { scan: colors[1], brent: colors[0], final: colors[2] };
 const profileMetrics = [
   { id: 'T_K', label: '温度', symbol: 'T', unit: 'K', read: p => p.T_K },
-  { id: 'p_Pa', label: '绝对压强', symbol: 'p', unit: 'MPa', read: p => p.p_Pa / 1e6 },
+  { id: 'p_Pa', label: '绝对压强', symbol: 'p', unit: 'MPa', log: true, read: p => p.p_Pa / 1e6 },
   { id: 'Ma', label: '马赫数', symbol: 'Ma', unit: '1', read: p => p.Ma },
   { id: 'u_m_s', label: '流速', symbol: 'u', unit: 'm/s', read: p => p.u_m_s },
-  { id: 'rho_kg_m3', label: '密度', symbol: 'ρ', unit: 'kg/m³', read: p => p.rho_kg_m3 },
+  { id: 'rho_kg_m3', label: '密度', symbol: 'ρ', unit: 'kg/m³', log: true, read: p => p.rho_kg_m3 },
   { id: 'gamma', label: '比热比', symbol: 'γ', unit: '1', read: p => p.gamma },
 ];
 const exitLabels = {
@@ -33,8 +34,30 @@ const state = {
   catalog: null, record: null, busy: false, stale: false, tab: 'overview',
   sample: 0, axis: 'pressure', overlay: false, variable: 'T_K',
   fieldModel: 'eq', scene:'nozzle', heatFocus: {row: 0, index: 0}, nozzleFocus: 0, camera: initialCamera(),
-  comparisons: [], redraw: null,
+  comparisons: [], redraw: null, fieldMode: 'value',
+  losses: loadLosses(), engineLevel: true,
 };
+
+function loadLosses() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('rocket-workbench-losses-v1') ?? 'null');
+    if (validLosses(saved)) return saved;
+  } catch { /* fall back to defaults */ }
+  return defaultLosses();
+}
+function saveLosses() {
+  try { localStorage.setItem('rocket-workbench-losses-v1', JSON.stringify(state.losses)); } catch { /* memory only */ }
+}
+// Significant-figure display for tables (raw values stay in JSON/CSV).
+function sig(value, digits = 5) {
+  if (!Number.isFinite(value)) return '—';
+  if (value === 0) return m('0', true);
+  const abs = Math.abs(value);
+  if (abs < 1e-3 || abs >= 1e7) return precise(value);
+  const decimals = Math.max(0, digits - 1 - Math.floor(Math.log10(abs)));
+  return m(numericSource(Number(value.toFixed(decimals)), decimals), true);
+}
+const unitCell = units => units === '1' ? '<span class="stat-detail">量纲一</span>' : unit(units);
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -125,7 +148,7 @@ function defaultCase() {
   if (!state.catalog) return;
   setKind('liquid');
   fillPreset('TQ-12B');
-  for (const [key, item] of Object.entries({ model: 'eq', throat: 'sonic', points: 41, heat: 0, heatMax: 300 })) {
+  for (const [key, item] of Object.entries({ model: 'eq', throat: 'sonic', points: 41, heat: 0, heatMax: 0 })) {
     element(key).value = item;
   }
 }
@@ -138,13 +161,18 @@ function caseName(input) {
 function showCurrent() {
   const { input, main, cases } = state.record;
   show('#case-title', caseName(input));
-  showFormula('#case-detail', `${esc(main.modelLabel)} · ${quantity(input.pc / 1e6,'MPa')} · ${main.result.profile.length} 个采样点`);
+  const kind = cases.length ? `单工况 + ${cases.length} 个区间算例` : '单工况（未算区间）';
+  showFormula('#case-detail', `${esc(main.modelLabel)} · ${quantity(input.pc / 1e6,'MPa')} · ${esc(kind)}`);
+  $('#stale-banner').hidden = !state.stale;
   status(`已完成 · ${fmt(main.seconds, 2)} s 基准算例${cases.length ? ` · ${cases.length} 个区间工况` : ''}${state.stale ? ' · 输入已修改' : ''}`);
 }
 
 function markStale() {
   state.stale = true;
-  if (state.record && !state.busy) status('输入已修改。右侧仍显示上次结果。');
+  if (state.record && !state.busy) {
+    status('输入已修改。右侧仍显示上次结果。');
+    $('#stale-banner').hidden = false;
+  }
 }
 
 function setTab(tab, focus = false) {
@@ -227,13 +255,20 @@ function png(id, name) {
   canvas.toBlob(blob => { if (blob) download(name + '.png', blob, 'image/png'); });
 }
 function saveJson() {
-  download(`${caseName(state.record.input)}-热力结果.json`, JSON.stringify(state.record, null, 2), 'application/json');
+  const env = envelope(state.record, state.losses, { engineLevel: state.engineLevel });
+  const record = { ...state.record, losses: state.losses, engineLevel: state.engineLevel,
+    envelope: env, publicJudgement: judgePublic(state.record, env) };
+  download(`${caseName(state.record.input)}-热力结果.json`, JSON.stringify(record, null, 2), 'application/json');
 }
 function saveProfile(cases = [state.record.main]) {
   const keys = ['i','p_Pa','T_K','u_m_s','Ma','gamma','rho_kg_m3','eps','Y_c','h_J_kg','s_J_kgK','a_m_s','G_kg_m2s'];
   csv('喷管剖面.csv', ['case','role','model','heat_kJ_kg','section', ...keys], cases.flatMap(item => {
     const { profile, throat } = item.result;
-    const record = (name, p) => [item.id,item.role,item.model,item.heat,name, ...keys.map(key => p[key])];
+    const record = (name, p) => [item.id,item.role,item.model,item.heat,name, ...keys.map(key => {
+      if (key !== 'eps') return p[key];
+      if (name === 'throat') return 1;
+      return p.Ma < 1 ? '' : p[key];  // solver leaves subsonic A/At at 0
+    })];
     return [record('throat', throat), ...profile.map((point, index) => record(index === 0 ? 'chamber' : index === profile.length - 1 ? 'exit' : 'sample', point))];
   }));
 }
@@ -275,7 +310,12 @@ function profilePlots(cases, axis, sampleReadout = true) {
   const includeThroat = (base.throat.p_Pa >= base.exit.p_Pa && base.throat.p_Pa <= base.chamber.p_c_Pa);
   const throatX = axis === 'pressure' ? logPressure(base.throat, base) : logPressure(base.throat, base) / logPressure(base.exit, base);
   const maxX = axis === 'pressure' ? Math.max(...active.map(c => logPressure(c.main.result.exit, c.main.result))) : 1;
-  const xt = [0, .25, .5, .75, 1].map(ratio => ratio * Math.max(maxX, 1e-8));
+  const span = Math.max(maxX, 1e-8);
+  const decades = [];
+  for (let k = 0; k * Math.LN10 <= span + 1e-9; k++) decades.push(k * Math.LN10);
+  const xt = axis === 'pressure'
+    ? (decades.length >= 2 ? decades : [0, span])
+    : [0, .25, .5, .75, 1];
   const current = () => base.profile[Math.min(state.sample, base.profile.length - 1)];
   const layouts = [];
   const redraw = () => {
@@ -287,7 +327,8 @@ function profilePlots(cases, axis, sampleReadout = true) {
           points: result.profile.map(point => [getX(point, result), metric.read(point)]) };
       });
       layouts[i] = linearChart(canvases[i], {
-        series, xTicks: xt, xFormat: x => mathText(numericSource(axis === 'pressure' ? Math.exp(-x) : x,3),true),
+        series, xTicks: xt, xDomain: [0, axis === 'pressure' ? span : 1],
+        xFormat: x => axis === 'pressure' ? mathText(x === 0 ? '1' : `10^{${-Math.round(x / Math.LN10)}}`, true) : mathText(numericSource(x,3),true),
         xLabel: axis === 'pressure' ? ['压强比 ', mathText('p/p_{c}'),'（对数刻度）'] : ['归一化膨胀进度 ',mathText('ξ')],
         refs: includeThroat ? [{x:throatX, dot:metric.read(base.throat), color:colors[2]}] : [],
         focus: sampleReadout ? [getX(focus, base), metric.read(focus)] : null,
@@ -337,7 +378,7 @@ function stateTables({ chamber, throat, exit, performance, product_properties: p
     ['气相动力黏度', 'Pa·s', prop(props?.chamber, 'mu_Pa_s', 'transport_valid'), null, prop(props?.exit, 'mu_Pa_s', 'transport_valid')],
   ];
   return fields(['量', '单位', '燃烧室', '喉部', '出口'], values.map(([label, units, ...row]) => [
-    label, unit(units), ...row.map(v => precise(v, 5)),
+    label, unitCell(units), ...row.map(v => sig(v, 5)),
   ]));
 }
 
@@ -347,7 +388,7 @@ function composition(result) {
   const total = gas.reduce((sum,row)=>sum+row.n_mol_kg, 0);
   const bars = gas.slice(0, 8).map(row => {
     const pct = 100 * row.n_mol_kg / total;
-    return `<div class="bar-row"><span>${esc(row.name)}</span><meter min="0" max="100" value="${pct}" aria-label="${esc(row.name)} 气相摩尔百分比"></meter><span class="bar-values">${quantity(pct,'%',4)}</span></div>`;
+    return `<div class="bar-row"><span title="${esc(row.name)}">${esc(row.name)}</span><meter min="0" max="100" value="${pct}" aria-label="${esc(row.name)} 气相摩尔百分比"></meter><span class="bar-values">${quantity(pct,'%',4)}</span></div>`;
   });
   return `<div class="bar-list">${bars.join('') || '<p class="panel-note">无气相组分。</p>'}</div>
   <details class="advanced"><summary>查看全部导出组分</summary>${fields(['组分', '相态', unit('mol/kg')], sorted.map(row => [esc(row.name), row.phase === 'gas' ? '气相' : '凝相', precise(row.n_mol_kg, 6)]))}</details>`;
@@ -361,13 +402,17 @@ function overview() {
   if (alt && state.overlay) compareProfiles.push({ name: alt.modelLabel, main: alt });
   const charts = profileMetrics.slice(0, 4).map(metric => chart(`plot-${metric.id}`,metric.label,'small-chart',metric)).join('');
   const warnings = main.warnings.map(warning => `<p class="notice">${esc(warning)}</p>`).join('');
+  const env = envelope(state.record, state.losses, { engineLevel: state.engineLevel });
+  const level = env?.engine ?? env?.chamber;
+  const delivered = level ? ` · 名义交付 ${quantity(level.nominal.isp,'s',1)}${env.engine ? '（整机）' : ''}` : '';
   panel.innerHTML = `<div class="stack">
     <div class="cards">
       ${stat(`燃烧室温度 ${m('T_{c}')}`, main.summary.temperature, 'K', 1, '化学平衡出口')}
       ${stat(`特征速度 ${m('c^{∗}')}`, main.summary.cstar, 'm/s', 1, '主推力室')}
-      ${stat(`给定环境比冲 ${m('I_{sp}')}`, main.summary.isp, 's', 2, `真空 ${quantity(main.summary.ispVac,'s',2)}`)}
-      ${stat(`给定环境推力 ${m('F')}`, main.summary.thrust, 'kN', 2, input.mdot ? `真空 ${quantity(main.summary.thrustVac,'kN',2)}` : '质量流量未提供')}
+      ${stat(`理想给定环境比冲 ${m('I_{sp}')}`, main.summary.isp, 's', 2, `真空 ${quantity(main.summary.ispVac,'s',2)}${delivered}`)}
+      ${stat(`理想给定环境推力 ${m('F')}`, main.summary.thrust, 'kN', 2, input.mdot ? `真空 ${quantity(main.summary.thrustVac,'kN',2)} · 按主推力室流量` : '主推力室流量未提供，推力与尺寸缺失')}
     </div>
+    <p class="panel-note">卡片为理想（${esc(main.modelLabel)}）热力解。计入燃烧、扩张、边界层${input.kind === 'liquid' ? '及整机支路' : ''}损失后的实际性能见「区间与验证」。</p>
     <section class="panel">
       ${header('喷管膨胀剖面', `环境绝对压强 ${quantity(input.pa / 1000,'kPa')} · ${result.profile.length} 个实算采样点`,
         `<select id="axis-choice" aria-label="剖面横轴">${options([['pressure','压强比'],['progress','膨胀进度']], state.axis)}</select>
@@ -418,7 +463,7 @@ function processView() {
     <section class="panel">${header('燃烧室温度求根','逐次记录试算温度与相对目标焓的偏差。')}
       <div class="legend">${phases.map(([key,label],i) => `<span><i class="${i===0?'blue':i===2?'amber':''}"></i>${label}</span>`).join('')}</div>
       <div class="chart-grid">${chart('trace-temp','试算温度','wide-chart',{symbol:'T',unit:'K'})}${chart('trace-residual','绝对焓残差（对数刻度）','wide-chart',{symbol:'|Δh|',unit:'J/kg'})}</div>
-      <p class="panel-note">残差图设 ${quantity(1e-10,'J/kg')} 显示下限。原始带符号值见表和 CSV。</p>
+      <p class="panel-note">残差图设 ${quantity(1e-10,'J/kg')} 显示下限。原始带符号值见表和 CSV。Brent 法要求残差与温度区间宽度同时达标才停止，所以残差先降到很小、随后在收窄区间时回升是正常现象；最终复算点（橙色）才是采用的解。</p>
       <details class="advanced"><summary>查看逐次试算表</summary>${fields(['序号','阶段',`温度 ${symbolUnit('T','K')}`,`焓残差 ${symbolUnit('Δh','J/kg')}`], traces.map(row=>[row.evaluation,stageLabels[row.stage] ?? '未知',precise(row.temperature,6),precise(row.residual,6)]))}</details>
     </section>
     <section class="panel">${header('状态守恒与复算检查')}${checkTable(main.checks)}</section>
@@ -445,10 +490,12 @@ function checkTable(items) {
     '重建燃烧室质量闭合 |Σ nᵢMᵢ − 1|': `重建燃烧室质量闭合 ${m('|∑ n_{i} M_{i} − 1|')}`,
     '喉部声速条件 |Ma − 1|': `喉部声速条件 ${m('|Ma − 1|')}`,
   };
-  return fields(['检查项','偏差','判据上限','单位','结果'], items.map(item => [
-    labels[item.label] ?? esc(item.label), precise(item.value), precise(item.limit), unit(item.unit),
-    badge(({ pass:'满足', review:'需复核', na:'不适用' })[item.status], item.status),
+  const rows = fields(['检查项','偏差','判据上限','单位','结果'], items.map(item => [
+    labels[item.label] ?? esc(item.label), precise(item.value), precise(item.limit), unitCell(item.unit),
+    item.construct && item.status === 'pass' ? badge('按构造满足','na')
+      : badge(({ pass:'满足', review:'需复核', na:'不适用' })[item.status], item.status),
   ]));
+  return `${rows}<p class="panel-note">「按构造满足」的量由求解器直接施加（等熵推进、喉部声速搜索），零偏差只说明记账一致，不构成独立物理检验。焓、质量与推力复算可以失败，是真正的校核。</p>`;
 }
 
 function fieldView() {
@@ -482,25 +529,40 @@ function fieldView() {
     : `<span class="axis-x">归一化膨胀进度 ${symbolUnit('ξ','1')}</span>
       <span class="axis-y">单位质量热损失 ${symbolUnit('Q','kJ/kg')}</span>
       <span class="axis-z">${esc(metric.label)} ${symbolUnit(metric.symbol,metric.unit)}</span>`;
-  const surfaceTitle = isNozzle ? '三维喷管扩张段' : '三维工况曲面';
+  const surfaceTitle = isNozzle ? '三维扩张段（面积–压强旋转体）' : '三维工况曲面';
   const surfaceCaption = isNozzle
-    ? '旋转截面形成喷管曲面，拖动查看喉部和出口。'
+    ? '按各截面面积比旋转生成，可拖动旋转。轴向按对数压强排布，不代表喷管真实长度和型面。'
     : '在同一膨胀模型下连接不同热损失工况的截面状态。';
   const surfaceNote = isNozzle
     ? `半径由 ${m('r/r_{t} = √(A/A_{t})')} 得到。轴向按压强定位，实际长度需另给几何坐标。颜色对应截面平均状态。${radialUnit === '1' ? '主推力室流量未知，横向坐标以喉半径归一化。' : ''}`
     : '曲面连接相邻实算样点。各工况在同一膨胀进度下可能对应不同压强。';
-  const domain = extent(rows.flatMap(row=>row.points.map(metric.read)));
-  const surfaceDomain = extent(surfaceRows.flatMap(row=>row.points.map(metric.read)));
+  const baseRow = rows.find(row => row.model === 'eq' && row.heat === main.heat) ?? rows[0];
+  const canDelta = rows.length >= 2 && rows.every(row => row.points.length === baseRow?.points.length);
+  if (!canDelta) state.fieldMode = 'value';
+  const delta = state.fieldMode === 'delta';
+  const readCell = delta
+    ? (point, j, i) => metric.read(point) - metric.read(baseRow.points[i])
+    : point => metric.read(point);
+  const domain = extent(rows.flatMap((row, j) => row.points.map((point, i) => readCell(point, j, i))));
+  // In difference mode the heat-loss surface shows the change from Q = 0 of
+  // the same model, so the heat-loss effect is not swamped by the expansion.
+  const surfaceBase = surfaceRows[0];
+  const surfaceDelta = delta && surfaceRows.length >= 2 && surfaceRows.every(row => row.points.length === surfaceBase.points.length);
+  const surfaceMetric = surfaceDelta ? { ...metric, log: false, label: `${metric.label}差值（相对 Q = ${fmt(surfaceBase.heat,0)}）`, read: point => point.delta } : metric;
+  const surfaceData = surfaceDelta ? surfaceRows.map(row => ({ ...row,
+    points: row.points.map((point, i) => ({ ...point, delta: metric.read(point) - metric.read(surfaceBase.points[i]) })) })) : surfaceRows;
+  const surfaceDomain = extent(surfaceData.flatMap(row=>row.points.map(surfaceMetric.read)));
   if (!rows[state.heatFocus.row]) state.heatFocus = {row:0,index:0};
   panel.innerHTML = `<div class="stack">
     <section class="panel">
       ${header('准一维彩色剖面', '每一行是一组 C 求解工况，单元颜色对应一个实际采样点。', `
         <label for="field-variable">显示物理量</label><select id="field-variable">${options(profileMetrics.map(m=>[m.id,m.label]),state.variable)}</select>
+        ${canDelta ? `<select id="field-mode" aria-label="色标模式">${options([['value','绝对值'],['delta',`相对${baseRow.modelLabel}差值`]],state.fieldMode)}</select>` : ''}
         ${btn('heat-export','彩色图 PNG')}`)}
-      ${rows.length ? `${chart('heatmap', `${metric.label} · 工况矩阵`, 'heat-chart', metric)}
+      ${rows.length ? `${chart('heatmap', `${metric.label}${delta ? ` 差值（相对${baseRow.modelLabel}）` : ''} · 工况矩阵`, 'heat-chart', metric)}
         <div class="sample"><label for="heat-row">工况</label><select id="heat-row" aria-label="色图工况">${options(rows.map((r,i)=>[String(i),r.label]),String(state.heatFocus.row))}</select>
         <label for="heat-index">截面</label><input type="range" id="heat-index" min="0" max="1" value="0"><strong id="heat-values"></strong></div>` : '<p class="notice">本次计算缺少有效剖面。</p>'}
-      <p class="panel-note">${m('ξ = ln(p/p_{c}) / ln(p_{e}/p_{c})')}。${m('0',true)} 为室压状态，${m('1',true)} 为出口。不同工况的同一 ${m('ξ')} 可对应不同压强。</p>
+      <p class="panel-note">${m('ξ = ln(p/p_{c}) / ln(p_{e}/p_{c})')}。${m('0',true)} 为室压状态，${m('1',true)} 为出口。不同工况的同一 ${m('ξ')} 可对应不同压强。${metric.log && !delta ? '压强、密度跨越多个数量级，采用对数色标。' : ''}${canDelta && !delta ? '工况间差异远小于沿程变化，切换到「差值」可看清。' : ''}</p>
     </section>
     <section class="panel">
       ${header(views.length ? surfaceTitle : '三维可视化', views.length ? surfaceCaption : '', `
@@ -523,6 +585,7 @@ function fieldView() {
     </section>` : ''}
   </div>`;
   on('#field-variable','change',event=>{state.variable=event.target.value; fieldView();});
+  on('#field-mode','change',event=>{state.fieldMode=event.target.value; fieldView();});
   on('#surface-view','change',event=>{state.scene=event.target.value; fieldView();});
   on('#surface-model','change',event=>{state.fieldModel=event.target.value; fieldView();});
   on('#surface-range','click',()=>run(true,'field'));
@@ -539,13 +602,14 @@ function fieldView() {
     heatIndex.value = index;
     $('#heat-row').value = state.heatFocus.row;
     const point = row.points[index];
-    showFormula('#heat-values', `截面 ${point.i} · ${m('ξ')} ${precise(index/(row.points.length-1),3)} · ${m('p/p_{c}')} ${precise(point.p_Pa/row.chamber.p_c_Pa,5)} · ${m(metric.symbol)} ${quantity(metric.read(point),metric.unit,4)}`);
-    hit = heatmap(heatCanvas, rows, metric, domain, state.heatFocus);
+    const shown = readCell(point, state.heatFocus.row, index);
+    showFormula('#heat-values', `截面 ${point.i} · ${m('ξ')} ${precise(index/(row.points.length-1),3)} · ${m('p/p_{c}')} ${precise(point.p_Pa/row.chamber.p_c_Pa,5)} · ${delta ? 'Δ' : ''}${m(metric.symbol)} ${quantity(shown,metric.unit,4)}`);
+    hit = heatmap(heatCanvas, rows, metric, domain, state.heatFocus, { diverging: delta, read: readCell });
   };
   const drawSurface = () => {
     if (!surfaceCanvas) return;
     if (isNozzle) nozzleSurface(surfaceCanvas,geometry,metric,state.camera,state.nozzleFocus);
-    else surface(surfaceCanvas,surfaceRows,metric,surfaceDomain,state.camera);
+    else surface(surfaceCanvas,surfaceData,surfaceMetric,surfaceDomain,state.camera);
     $('#camera-angle').value = state.camera.angle;
     $('#camera-tilt').value = state.camera.tilt;
   };
@@ -610,72 +674,124 @@ function fieldView() {
   bindDownload('#nozzle-export',()=>png('nozzle-color',`${metric.label}-扩张段截面`));
 }
 
+function lossTable(record) {
+  const gg = record.cycle?.cycle === 'gg';
+  const rows = lossFactors.filter(f => !f.cycle || gg).map(f => {
+    const cur = state.losses[f.id];
+    const cell = key => `<input class="loss-input" type="number" step="${f.step}" data-loss="${f.id}" data-key="${key}" value="${cur[key]}" aria-label="${esc(f.label)} ${key}">`;
+    const lam = f.id === 'angle' ? `<br><span class="stat-detail">${m('λ',false)} ${sig(divergence(cur.max),4)} / ${sig(divergence(cur.nom),4)} / ${sig(divergence(cur.min),4)}</span>` : '';
+    return [`${esc(f.label)} ${m(f.symbol)}`, cell('min'), cell('nom'), cell('max') + lam,
+      `${esc(f.note)}<br>${link(f.url, f.source)}`];
+  });
+  return fields(['损失因子','下限','名义','上限','依据'], rows);
+}
+
 function validationView() {
-  const {main, input, public: refs, cases, failed, bounds, analytical} = state.record;
-  const scope = input.kind === 'solid'
-    ? '固体算例区间比较绝热下的两种膨胀模型。'
-    : `固定推进剂、入口温度、氧燃比、室压、出口条件、主推力室流量和环境压强。实算 ${m('Q')} = ${precise(0)} 与 ${quantity(input.heatMax,'kJ/kg')} 下的化学平衡及组分冻结，逐指标取边界工况的最小值和最大值。`;
-  const caseTags = item => `${esc(item.modelLabel)} · ${m('Q')} ${precise(item.heat,3)}`;
-  const caseTitle = id => cases.find(item=>item.id===id);
-  const caseText = id => { const item = caseTitle(id); return item ? caseTags(item) : '—'; };
-  const within = (flag, names = ['落在区间','超出区间']) =>
-    flag === null || flag === undefined ? badge('待判定') : badge(names[flag ? 0 : 1],flag ? 'pass' : 'review');
-  const publicRows = refs.map(ref => [
-    esc(ref.label), quantity(ref.computed,ref.unit,ref.digits),
-    `${quantity(ref.value,ref.unit,ref.digits)}${ref.original ? `<br><span class="stat-detail">${m(ref.original,true)}</span>` : ''}`,
-    ref.comparable ? ng(ref.deltaPercent) : badge('工况不同'),
-    within(ref.inBounds), `${esc(ref.condition)}<br>${link(ref.url,ref.source)}`,
-  ]);
+  const {main, input, public: refs, cases, failed, bounds, analytical, implied, reference, cycle} = state.record;
+  const liquid = input.kind === 'liquid';
+  const env = envelope(state.record, state.losses, { engineLevel: state.engineLevel });
+  const judged = judgePublic(state.record, env);
+  const caseTags = item => `${esc(item.modelLabel)}${item.heat ? ` · ${m('Q')} ${precise(item.heat,3)}` : ''}`;
+  const caseText = id => { const item = cases.find(c => c.id === id); return item ? caseTags(item) : '—'; };
+
+  // ① ideal model interval
+  const hasHeat = cases.some(item => item.heat > 0);
   const boundRows = bounds.map(bound => [
-    `${esc(bound.label)} ${symbolUnit(resultSymbols[bound.id],bound.unit)}`, `${precise(main.summary[bound.id],bound.digits)} ${bound.baseline == null ? '' : within(bound.baseline)}`,
-    bound.low === null ? '—' : `${precise(bound.low,bound.digits)}<br><span class="stat-detail">${caseText(bound.lowId)}</span>`,
-    bound.high === null ? '—' : `${precise(bound.high,bound.digits)}<br><span class="stat-detail">${caseText(bound.highId)}</span>`,
-    bound.probes.length ? bound.probes.map(probe => `<div>${caseText(probe.id)} · ${precise(probe.value,bound.digits)} ${within(probe.within)}</div>`).join('') : '—',
+    `${esc(bound.label)} ${symbolUnit(resultSymbols[bound.id],bound.unit)}`,
+    bound.low === null ? '—' : `${sig(bound.low,6)}<br><span class="stat-detail">${caseText(bound.lowId)}</span>`,
+    bound.high === null ? '—' : `${sig(bound.high,6)}<br><span class="stat-detail">${caseText(bound.highId)}</span>`,
+    Number.isFinite(bound.low) && bound.high ? ng(100 * (bound.low / bound.high - 1)) : '—',
+    ...(hasHeat ? [bound.probes.length ? bound.probes.map(probe => `<div>${caseText(probe.id)} · ${sig(probe.value,6)}</div>`).join('') : '—'] : []),
   ]);
-  const modelRows = cases.map(item=>[
-    caseTags(item), item.role === 'edge' ? '边界' : '中点验证',
-    precise(item.summary.temperature,1),precise(item.summary.cstar,1),precise(item.summary.isp,2),
-    precise(item.summary.ispVac,2),precise(item.summary.thrust,2),
-    item.checks.some(check=>check.status==='review') ? badge('需复核','review') : badge('满足','pass'),
+  const idealSection = `<section class="panel">
+    ${header('① 理想热力区间', '同一推进剂、室压、混合比、面积比下，平衡流与组分冻结流两种膨胀模型给出的理想解边界。', `${btn('calculate-bounds', cases.length ? '重新计算区间' : '计算工况区间')}${cases.length ? btn('range-export','区间 CSV') : ''}`)}
+    ${failed.map(item=>`<p class="notice">${esc(item.model)} · ${m('Q')} ${quantity(item.heat,'kJ/kg')} 的计算失败：${esc(item.message)}</p>`).join('')}
+    ${boundRows.length ? fields(['指标','下界与工况','上界与工况','下界相对上界',...(hasHeat ? ['中间热损失样点'] : [])], boundRows)
+      : '<p class="notice">当前只算了单工况。运行「计算工况区间」以加入冻结流下限。</p>'}
+    <p class="panel-note">平衡流是理想上限，冻结流对应化学反应完全来不及进行的极限，真实喷管介于两者之间。这一层只包含热力学模型差异，不含燃烧、扩张、摩擦等实际损失，所以公开实测或设计值通常低于该区间。${hasHeat ? '热损失 Q 为可选敏感性输入：再生冷却发动机的壁面热流大部分回到推进剂，不宜整体计为损失。' : ''}</p>
+  </section>`;
+
+  // ② loss factors and ③ delivered envelope
+  const fmtLevel = (lvl, id, digits) => lvl ? sig(lvl.nominal[id], digits) : '—';
+  const range = (lvl, id, digits) => lvl && Number.isFinite(lvl.low[id]) ? `${sig(lvl.low[id],digits)} – ${sig(lvl.high[id],digits)}` : '—';
+  const envRows = env ? envelopeMetrics.map(({id,label,symbol,unit:u}) => [
+    `${esc(label)} ${symbolUnit(symbol,u)}`, sig(env.ideal[id],5),
+    fmtLevel(env.chamber,id,5), range(env.chamber,id,5),
+    ...(env.engine ? [fmtLevel(env.engine,id,5), range(env.engine,id,5)] : []),
+  ]) : [];
+  const lossSection = liquid ? `<section class="panel">
+    ${header('② 损失因子', `交付比冲按 ${m('I_{vac} = η_{c*} · λ · η_{BL} · I_{vac,ideal}')} 计算，给定环境比冲再扣除按交付 ${m('c^{∗}')} 换算的背压项。`, `${btn('reset-losses','恢复默认因子')}`)}
+    ${cycle ? `<p class="panel-note">${esc(input.preset)} 为${esc(cycle.label)}（${link(cycle.url, cycle.source)}）。</p>` : ''}
+    ${cycle?.cycle === 'gg' ? `<label class="check"><input type="checkbox" id="engine-level" ${state.engineLevel ? 'checked' : ''}> 按整机口径计入燃气发生器排气（${m('δI/I ≈ (ṁ_{GG}/ṁ)(1 − c_{GG}/c)')}）；输入流量视为主推力室流量</label>` : ''}
+    ${lossTable(state.record)}
+    <p class="panel-note">修改后即时重算，无需重新调用求解器。默认值是有出处的工程范围或标明的课程假设，请用课程资料或试验数据覆盖。组合效率 ${m('η_{c*}λη_{BL}')}：${env ? `${sig(env.efficiency.low,4)} / ${sig(env.efficiency.nominal,4)} / ${sig(env.efficiency.high,4)}` : '因子无效'}。</p>
+  </section>
+  <section class="panel">
+    ${header('③ 实际性能包络', `名义值：平衡流 × 名义因子。包络下限：${env?.frozenIncluded ? '冻结流' : '平衡流（未算冻结流）'} × 各因子最不利值；上限：平衡流 × 各因子最有利值。`, btn('envelope-export','包络 CSV'))}
+    ${env ? fields(['指标','理想（平衡流）','推力室名义','推力室包络',...(env.engine ? ['整机名义','整机包络'] : [])], envRows) : '<p class="notice">损失因子无效：须满足 下限 ≤ 名义 ≤ 上限。</p>'}
+    ${env && !env.frozenIncluded ? '<p class="notice">尚未计算冻结流，包络下限偏乐观。运行「计算工况区间」后自动补全。</p>' : ''}
+  </section>` : `<section class="panel">${header('② 实际性能包络')}<p class="panel-note">固体算例暂不提供损失包络。</p></section>`;
+
+  // ④ public values
+  const publicRows = judged.map(ref => [
+    `${esc(ref.label)}<br><span class="stat-detail">${esc(ref.condition)}</span>`,
+    `${quantity(ref.value,ref.unit,ref.digits)}${ref.original ? `<br><span class="stat-detail">${m(ref.original,true)}</span>` : ''}`,
+    ref.comparable ? `${sig(ref.nominal,5)}<br><span class="stat-detail">${range(env.engine ?? env.chamber, ref.metric, 4)}</span>` : badge('口径不同'),
+    ref.comparable ? ng(ref.deltaNominal) : `<span class="stat-detail">${esc(ref.reason)}</span>`,
+    ref.inside === null ? badge('待判定') : badge(ref.inside ? '在包络内' : '超出包络', ref.inside ? 'pass' : 'review'),
+    ref.requiredEfficiency ? sig(ref.requiredEfficiency,4) : '—',
+    `${esc(ref.basis)}<br>${link(ref.url,ref.source)}${ref.note ? `<br><span class="stat-detail">${esc(ref.note)}</span>` : ''}`,
   ]);
+  const flowLine = implied ? `<p class="panel-note">流量诊断：公开推力 ÷ 公开比冲 = ${quantity(implied.total,'kg/s',4)}（${esc(implied.condition)}）。${implied.ratio ? `输入的主推力室流量为其 ${sig(100*implied.ratio,4)}%${Math.abs(implied.ratio-1) < .005 ? '，两者同源，推力对比不独立。' : `，相当于假设 ${sig(100*(1-implied.ratio),3)}% 的流量不经过主推力室。`}` : '主推力室流量未知。'}</p>` : '';
+  const publicSection = `<section class="panel">
+    ${header('④ 公开值对照', `比较层级：${env?.engine ? '整机（含燃气发生器排气）' : '推力室'}。偏差 = 公开值 / 名义交付值 − ${m('1',true)}。所需综合效率 = 公开比冲 / 理想平衡流比冲。`)}
+    ${judged.length ? fields(['指标','公开值','名义交付与包络','相对名义','包络判定','所需综合效率','口径、依据和出处'], publicRows) : '<p class="panel-note">此算例暂无已录入的同型号公开基准。</p>'}
+    ${flowLine}
+    <details class="advanced"><summary>查看资料及型号口径</summary><ul class="sources">${state.catalog.benchmarkContext.map(item=>`<li>${esc(item.description)} ${link(item.url,item.label)}</li>`).join('')}</ul></details>
+  </section>`;
+
+  // ⑤ independent reference
+  const refNames = {temperature:['燃烧室温度','K'],cstar:['特征速度','m/s'],isp:['给定环境比冲','s'],ispVac:['真空比冲','s'],exitPressure:['出口压强','kPa']};
+  const referenceSection = reference ? `<section class="panel">
+    ${header('⑤ 独立代码复核', `同一工况用 ${esc(reference.tool)} 独立求解（${reference.model === 'eq' ? '平衡流' : '冻结流'}），与 C 求解器对比。`)}
+    ${fields(['指标','单位','Cantera','C 求解器','偏差'], reference.rows.map(row => [esc(refNames[row.id][0]), unit(refNames[row.id][1]), sig(row.reference,6), sig(row.computed,6), ng(row.deltaPercent)]))}
+    <p class="panel-note">两套代码使用同源 NASA 热力数据，但平衡算法和喷管推进独立实现。偏差在 0.1% 量级，说明理想解可信，与公开值的差距来自损失和口径，而非求解错误。</p>
+  </section>` : '';
+
   const idealRows = analytical ? resultKeys.filter(([id])=>Object.hasOwn(analytical,id)).map(([id,label,units,digits]) => {
     const a = analytical[id], b = main.summary[id];
-    return [`${label} ${m(resultSymbols[id])}`,unit(units),precise(a,digits),precise(b,digits),Number.isFinite(a) && a !== 0 && Number.isFinite(b) ? ng(100*(b/a-1)) : '—'];
+    return [`${label} ${m(resultSymbols[id])}`,unitCell(units),sig(a,5),sig(b,5),Number.isFinite(a) && a !== 0 && Number.isFinite(b) ? ng(100*(b/a-1)) : '—'];
   }) : [];
-  const sourceList = state.catalog.benchmarkContext.map(item=>`<li>${esc(item.description)} ${link(item.url,item.label)}</li>`).join('');
-  const published = refs.length ? fields(['指标','主推力室计算值','公开参考','相对偏差','公开值与区间','口径和出处'],publicRows)
-    : '<p class="panel-note">此算例暂无已录入的同型号公开基准。</p>';
+  const n = reference ? '⑥' : '⑤';
   panel.innerHTML = `<div class="stack">
+    ${idealSection}${lossSection}${publicSection}${referenceSection}
     <section class="panel">
-      ${header('理论工况区间', '', `${btn('calculate-bounds','重新计算区间')}${cases.length ? btn('range-export','区间 CSV') : ''}`)}
-      <p class="panel-note">${scope}</p>
-      <p class="panel-note">边界由实算样点给出。中间热损失工况单独计算，检验边界包络。默认 ${m('Q')} 上限是课程敏感性假设。摩擦、流动分离和整机支路需要额外输入或模型。</p>
-      ${failed.map(item=>`<p class="notice">${esc(item.model)} · ${m('Q')} ${quantity(item.heat,'kJ/kg')} 的计算失败：${esc(item.message)}</p>`).join('')}
-      ${boundRows.length ? fields(['指标','基准算例','下界与工况','上界与工况','中点实算与判定'],boundRows) : '<p class="notice">运行工况区间后显示边界和中点验证。</p>'}
-    </section>
-    <section class="panel">
-      ${header('公开性能比对', `给定环境与真空指标分别使用对应口径。相对偏差取计算值与公开值的比值减 ${m('1',true)}，再乘 ${m('100%',true)}。`)}
-      ${published}
-      <p class="panel-note">模型采用课程预设的主推力室质量流量。公开整机值同时受分支流量、损失和额定条件影响。数值相近与守恒满足分别记录。</p>
-      <details class="advanced"><summary>查看资料及型号口径</summary><ul class="sources">${sourceList}</ul></details>
-    </section>
-    ${modelRows.length ? `<section class="panel">${header('工况矩阵',`${m('Q')} 以每千克产物计，压强和测点定义见完整结果。`,btn('range-profile','全工况剖面 CSV'))}
-    ${fields([`模型 · ${symbolUnit('Q','kJ/kg')}`,'用途',symbolUnit('T_{c}','K'),symbolUnit('c^{∗}','m/s'),`给定环境 ${symbolUnit('I_{sp}','s')}`,`真空 ${symbolUnit('I_{sp}','s')}`,`给定环境 ${symbolUnit('F','kN')}`,'守恒复算'],modelRows)}</section>` : ''}
-    <section class="panel">
-      ${header('定比热理想气体对照',`以同一室态、出口条件和环境压强独立解等熵关系，${m('γ')} 取室态值。`)}
+      ${header(`${n} 定比热理想气体对照`,`以同一室态、出口条件和环境压强独立解等熵关系，${m('γ')} 取室态值。`)}
       ${idealRows.length ? fields(['指标','单位','解析参考','C 数值解','相对解析参考偏差'],idealRows)
         : '<p class="panel-note">当前条件缺少适用的声速堵塞解析参考。</p>'}
-      <p class="panel-note">此对照检查模型趋势。温度相关物性及化学组成变化会造成可解释的偏差。 ${link('https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/rocket-thrust-equation/','NASA Glenn 公式')}</p>
+      <p class="panel-note">定比热模型忽略离解复合放热，因此数值解比冲高 2–3% 属预期趋势，不是误差。</p>
     </section>
-    <section class="panel">${header('基准算例数值检查', '按求解器容差及界面复算精度检查。', btn('validate-export','完整 JSON'))}${checkTable(main.checks)}</section>
+    <section class="panel">${header(`${reference ? '⑦' : '⑥'} 基准算例数值检查`, '按求解器容差及界面复算精度检查。', btn('validate-export','完整 JSON'))}${checkTable(main.checks)}</section>
   </div>`;
   on('#calculate-bounds','click',()=>run(true,'validation'));
+  on('#reset-losses','click',()=>{ state.losses = defaultLosses(); saveLosses(); validationView(); });
+  on('#engine-level','change',event=>{ state.engineLevel = event.target.checked; validationView(); });
+  for (const inputEl of panel.querySelectorAll('[data-loss]')) inputEl.addEventListener('change', () => {
+    const next = structuredClone(state.losses);
+    next[inputEl.dataset.loss][inputEl.dataset.key] = inputEl.valueAsNumber;
+    state.losses = next;
+    if (validLosses(next)) saveLosses();
+    validationView();
+  });
   bindDownload('#validate-export',saveJson);
-  bindDownload('#range-profile',()=>saveProfile(cases));
   bindDownload('#range-export',()=>csv('区间工况.csv',
     ['id','role','model','heat_kJ_kg',...resultKeys.map(([id])=>id)],
     [main,...cases].map(item=>[item.id,item.role,item.model,item.heat,...resultKeys.map(([id])=>item.summary[id])])
   ));
+  bindDownload('#envelope-export',()=> env && csv('实际性能包络.csv',
+    ['metric','unit','ideal_eq','chamber_nominal','chamber_low','chamber_high','engine_nominal','engine_low','engine_high'],
+    envelopeMetrics.map(({id,unit:u})=>[id,u,env.ideal[id],env.chamber.nominal[id],env.chamber.low[id],env.chamber.high[id],
+      env.engine?.nominal[id] ?? '',env.engine?.low[id] ?? '',env.engine?.high[id] ?? ''])));
 }
 
 const comparisonStorage = 'rocket-workbench-comparisons-v1';
@@ -715,7 +831,7 @@ async function compareCoursePresets() {
     for (const id of courseIds) {
       status(`正在复算对比工况 ${id}…`, 'pending');
       const p = state.catalog.presets.find(item=>item.id===id);
-      const input = {...p, kind:'liquid', preset:id, model:'eq', throat:'sonic', points:41, heat:0, heatMax:300, exitMode:'eps', exitValue:p.eps};
+      const input = {...p, kind:'liquid', preset:id, model:'eq', throat:'sonic', points:41, heat:0, heatMax:0, exitMode:'eps', exitValue:p.eps};
       try {
         addComparison(await request('/api/calculate', {
           method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input,range:false}),

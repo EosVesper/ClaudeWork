@@ -3,7 +3,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, rmdir, stat } from 'node:fs/pro
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { audit, benchmarkContext, comparePublic, perfectGasReference, sampledBounds, summarize } from './analysis.mjs';
+import { audit, benchmarkContext, comparePublic, engineCycles, impliedFlow, perfectGasReference, referenceCheck, sampledBounds, summarize } from './analysis.mjs';
 
 const execute = promisify(execFile);
 const solverDirectory = fileURLToPath(new URL('./solver/', import.meta.url));
@@ -36,7 +36,7 @@ export async function loadPresets() {
     return { id, name, oxidizer, fuel, tox: +tox, tfuel: +tfuel, of: +of,
       pc: +pc, eps: +eps, pa: +pa, mdot: +mdot, source };
   });
-  return { presets, oxidizers, fuels, solids, models, benchmarkContext };
+  return { presets, oxidizers, fuels, solids, models, benchmarkContext, engineCycles };
 }
 
 function selection(value, choices, label) {
@@ -169,10 +169,14 @@ export async function calculate(input, withRange, presets) {
   const cases = outcomes.slice(1).filter(item => item.status === 'fulfilled').map(item => item.value);
   const failed = outcomes.slice(1).filter(item => item.status === 'rejected')
     .map(({ config, reason }) => ({ ...config, message: reason.message }));
+  const preset = presets.find(item => item.id === input.preset);
   const bounds = withRange ? sampledBounds(cases, configs.filter(item => item.role === 'edge').length, main) : [];
   return { input, main, cases, failed, bounds,
     analytical: perfectGasReference(input, main.result.chamber),
-    public: comparePublic(input, presets.find(item => item.id === input.preset), main, bounds),
+    public: comparePublic(input, preset, main, bounds),
+    implied: input.kind === 'liquid' ? impliedFlow(input.preset, input.mdot) : null,
+    reference: preset ? referenceCheck(input, preset, main) : null,
+    cycle: engineCycles[input.preset] ?? null,
     createdAt: new Date().toISOString(),
   };
 }

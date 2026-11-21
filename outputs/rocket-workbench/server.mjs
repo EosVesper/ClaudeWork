@@ -11,6 +11,7 @@ const assets = {
   '/app.mjs': ['app.mjs', 'text/javascript'],
   '/charts.mjs': ['charts.mjs', 'text/javascript'],
   '/math.mjs': ['math.mjs', 'text/javascript'],
+  '/losses.mjs': ['losses.mjs', 'text/javascript'],
   '/style.css': ['style.css', 'text/css'],
   '/icon.svg': ['icon.svg', 'image/svg+xml'],
 };

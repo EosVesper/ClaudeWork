@@ -98,7 +98,8 @@ export function linearChart(canvas, opts) {
   const xt = opts.xTicks || linearTicks(extent(valid.map(p => p[0])), 5);
   const yt = opts.yTicks || linearTicks(extent(valid.map(p => p[1])), 4);
   const left = 56, right = w - 17, top = 15, bottom = h - 40;
-  const px = x => left + (x - xt[0]) * (right - left) / (xt.at(-1) - xt[0]);
+  const [x0, x1] = opts.xDomain ?? [xt[0], xt.at(-1)];
+  const px = x => left + (x - x0) * (right - left) / (x1 - x0);
   const py = y => bottom - (y - yt[0]) * (bottom - top) / (yt.at(-1) - yt[0]);
   for (const tick of yt) {
     segment(ctx, left, py(tick), right, py(tick), grid);
@@ -152,32 +153,47 @@ export function linearChart(canvas, opts) {
   }
   ctx.restore();
   return {
-    fromPixel: x => xt[0] + (x - left) * (xt.at(-1) - xt[0]) / (right - left),
+    fromPixel: x => x0 + (x - left) * (x1 - x0) / (right - left),
     hit: (x, y) => x >= left && x <= right && y >= top && y <= bottom,
   };
 }
 
 const ramp = [[37,52,100], [41,107,157], [39,166,166], [140,211,134], [255,212,117]];
-function heatColor(value, [low, high]) {
-  const t = high > low ? Math.min(1, Math.max(0, (value - low) / (high - low))) : 0.5;
-  const i = Math.min(ramp.length - 2, Math.floor(t * (ramp.length - 1)));
-  const mix = t * (ramp.length - 1) - i;
-  return `rgb(${ramp[i].map((component, c) => Math.round(component + (ramp[i+1][c] - component) * mix)).join(',')})`;
+const divergingRamp = [[70,120,220], [120,170,225], [214,222,226], [240,160,110], [214,90,70]];
+// Colour scale: log for quantities spanning decades (p, ρ), symmetric
+// diverging for differences against a baseline.
+export function colorScaleOf(metric, domain, diverging = false) {
+  const log = Boolean(metric?.log) && !diverging && domain[0] > 0 && domain[1] > domain[0];
+  const f = log ? Math.log10 : v => v;
+  const [low, high] = diverging ? [-Math.max(Math.abs(domain[0]), Math.abs(domain[1])), Math.max(Math.abs(domain[0]), Math.abs(domain[1]))] : domain;
+  return { log, diverging, domain: [low, high], stops: diverging ? divergingRamp : ramp,
+    t: value => high > low ? Math.min(1, Math.max(0, (f(value) - f(low)) / (f(high) - f(low)))) : 0.5 };
+}
+function heatColor(value, scale) {
+  const stops = scale.stops ?? ramp;
+  const t = scale.t ? scale.t(value) : 0.5;
+  const i = Math.min(stops.length - 2, Math.floor(t * (stops.length - 1)));
+  const mix = t * (stops.length - 1) - i;
+  return `rgb(${stops[i].map((component, c) => Math.round(component + (stops[i+1][c] - component) * mix)).join(',')})`;
 }
 
 const progressTicks = [0, .25, .5, .75, 1];
-function colorScale(ctx, domain, unit, left, right, y) {
+function colorScale(ctx, scale, unit, left, right, y) {
   const start = left + Math.min(59, (right-left)*.21);
-  const end = right - Math.min(107, (right-left)*.28);
+  const end = right - Math.min(130, (right-left)*.3);
   const gradient = ctx.createLinearGradient(start, y, end, y);
-  ramp.forEach((rgb,i)=>gradient.addColorStop(i/(ramp.length-1),`rgb(${rgb.join(',')})`));
+  scale.stops.forEach((rgb,i)=>gradient.addColorStop(i/(scale.stops.length-1),`rgb(${rgb.join(',')})`));
   ctx.fillStyle = gradient;
   ctx.fillRect(start, y - 3, Math.max(1,end-start), 7);
-  caption(ctx, num(domain[0]), start-6, y, 'right');
-  caption(ctx, [num(domain[1]), ' ', mathText(unitSource(unit), true)], end+6, y);
+  const [low, high] = scale.domain;
+  caption(ctx, num(low), start-6, y, 'right');
+  const tag = scale.log ? ' · 对数色标' : scale.diverging ? ' · 差值' : '';
+  caption(ctx, [num(high), ' ', mathText(unitSource(unit), true), tag], end+6, y);
 }
 
-export function heatmap(canvas, rows, metric, domain, focus) {
+export function heatmap(canvas, rows, metric, domain, focus, opts = {}) {
+  const scale = colorScaleOf(metric, domain, opts.diverging);
+  const read = opts.read ?? metric.read;
   const layout = frame(canvas);
   if (!layout || !rows.length) return null;
   const { ctx, w, h } = layout;
@@ -193,8 +209,8 @@ export function heatmap(canvas, rows, metric, domain, focus) {
       const x = left + i * interval;
       const x0 = Math.max(left, x - interval / 2);
       const x1 = Math.min(right, x + interval / 2);
-      const value = metric.read(point);
-      ctx.fillStyle = Number.isFinite(value) ? heatColor(value, domain) : grid;
+      const value = read(point, j, i);
+      ctx.fillStyle = Number.isFinite(value) ? heatColor(value, scale) : grid;
       ctx.fillRect(x0, y, x1 - x0 + 0.5, rowHeight - 2);
       if (focus?.row === j && focus.index === i) {
         ctx.strokeStyle = '#ffffff';
@@ -209,7 +225,7 @@ export function heatmap(canvas, rows, metric, domain, focus) {
     caption(ctx, num(value), x, bottom + 16, 'center');
   }
   caption(ctx, ['归一化膨胀进度 ', axisLabel('ξ', '1')], (left + right) / 2, h - 33, 'center');
-  colorScale(ctx,domain,metric.unit,left,right,h-13);
+  colorScale(ctx,scale,metric.unit,left,right,h-13);
   return (x, y) => {
     if (x < left || x > right || y < top || y >= bottom) return null;
     const row = Math.floor((y - top) / rowHeight);
@@ -252,7 +268,7 @@ export function nozzleMap(canvas, geometry, metric, focused) {
   const xOf = p => x0 + (x1-x0)*p.progress;
   const yOf = p => (mid-25)*p.radiusRatio/radialMax;
   const values = points.map(metric.read);
-  const domain = extent(values);
+  const scale = colorScaleOf(metric, extent(values));
   const nodes = points.map((p,i)=>({x:xOf(p), y:yOf(p), v:values[i]}));
   ctx.save();
   ctx.beginPath();
@@ -264,7 +280,7 @@ export function nozzleMap(canvas, geometry, metric, focused) {
   nodes.forEach((p,i)=>{
     const left = i === 0 ? p.x : (p.x+nodes[i-1].x)/2;
     const right = i === nodes.length-1 ? p.x : (p.x+nodes[i+1].x)/2;
-    ctx.fillStyle = Number.isFinite(p.v) ? heatColor(p.v,domain) : grid;
+    ctx.fillStyle = Number.isFinite(p.v) ? heatColor(p.v,scale) : grid;
     ctx.fillRect(left,0,right-left+0.5,mid*2);
   });
   segment(ctx,x0,mid,x1,mid,'#e8f0f1',.8,[6,5]);
@@ -286,7 +302,7 @@ export function nozzleMap(canvas, geometry, metric, focused) {
     caption(ctx,num(tick),x,axisY+13,'center');
   });
   caption(ctx,['喉后膨胀进度 ', axisLabel('ξ_{t}', '1')],(x0+x1)/2,h-37,'center');
-  colorScale(ctx,domain,metric.unit,x0,x1,h-14);
+  colorScale(ctx,scale,metric.unit,x0,x1,h-14);
   return {
     points,
     hit: x => {
@@ -351,7 +367,7 @@ export function nozzleSurface(canvas, geometry, metric, camera, focused) {
   const radialUnit = throatRadius === null ? '1' : 'm';
   const radialScale = maximumRatio * (throatRadius ?? 1);
   const symbols = throatRadius === null ? ['y/r_{t}','z/r_{t}'] : ['y','z'];
-  const domain = extent(points.map(metric.read));
+  const scale = colorScaleOf(metric, extent(points.map(metric.read)));
   const nPhi = 32;
   const rings = points.map(point => {
     const x = xOf(point.progress);
@@ -373,7 +389,7 @@ export function nozzleSurface(canvas, geometry, metric, camera, focused) {
     }
   }
   for (const face of faces.sort((a,b)=>a.depth-b.depth)) {
-    polygon(ctx, face.corners, Number.isFinite(face.value) ? heatColor(face.value,domain) : grid,
+    polygon(ctx, face.corners, Number.isFinite(face.value) ? heatColor(face.value,scale) : grid,
       face.selected ? '#c5f0eb85' : face.band % 4 === 0 ? '#0d2939aa' : '#1b3f4b60');
   }
 
@@ -398,7 +414,7 @@ export function nozzleSurface(canvas, geometry, metric, camera, focused) {
     caption(ctx,num(factor*radialScale),x+7,y,'left',axesColors[1]);
     caption(ctx,num(factor*radialScale),a+7,b,'left',axesColors[2]);
   }
-  caption(ctx,['喉部 ',mathText('p_{t}'),' → 出口 ',mathText('p_{e}')],14,17);
+  caption(ctx,['喉部 ',mathText('p_{t}'),' → 出口 ',mathText('p_{e}'),' · 轴向按对数压强排布，非真实长度'],14,17);
   caption(ctx,surfaceName(metric),w-14,17,'right');
   const labelSize = w < 480 ? 11 : 13;
   const [px,py] = pAxis(.25);
@@ -407,7 +423,7 @@ export function nozzleSurface(canvas, geometry, metric, camera, focused) {
   caption(ctx,[axisLabel('p','MPa'),' 对数'],px,py+29,'center',axesColors[0],labelSize);
   caption(ctx,axisLabel(symbols[0],radialUnit),yx,yy+15,'center',axesColors[1],labelSize);
   caption(ctx,axisLabel(symbols[1],radialUnit),zx,zy-15,'center',axesColors[2],labelSize);
-  colorScale(ctx,domain,metric.unit,Math.max(12,w*.17),Math.min(w-12,w*.83),h-15);
+  colorScale(ctx,scale,metric.unit,Math.max(12,w*.17),Math.min(w-12,w*.83),h-15);
 }
 
 export function surface(canvas, rows, metric, domain, camera) {
@@ -415,6 +431,7 @@ export function surface(canvas, rows, metric, domain, camera) {
   if (!layout || rows.length < 2) return;
   const { ctx, w, h } = layout;
   const [low, high] = domain;
+  const scale = colorScaleOf(metric, domain);
   const heatMin = rows[0].heat;
   const heatMax = rows.at(-1).heat;
   const projection = fitProjection(w,h,camera,[[-.7,.7],[-.44,.44],[0,.96]]);
@@ -442,7 +459,7 @@ export function surface(canvas, rows, metric, domain, camera) {
   }
   polygons.sort((a,b) => a.reduce((sum,p)=>sum+p.point[2],0) - b.reduce((sum,p)=>sum+p.point[2],0));
   for (const quad of polygons) {
-    polygon(ctx,quad.map(p=>p.point),heatColor(quad.reduce((sum,p)=>sum+p.value,0)/4,domain),'#16313d');
+    polygon(ctx,quad.map(p=>p.point),heatColor(quad.reduce((sum,p)=>sum+p.value,0)/4,scale),'#16313d');
   }
   for (const row of coordinates) {
     for (let i = 1; i < row.length; i++) {
@@ -472,5 +489,5 @@ export function surface(canvas, rows, metric, domain, camera) {
   caption(ctx,axisLabel('ξ','1'),w*.2,h-40,'center',axesColors[0]);
   caption(ctx,axisLabel('Q','kJ/kg'),w*.5,h-40,'center',axesColors[1]);
   caption(ctx,axisLabel(metric.symbol,metric.unit),w*.81,h-40,'center',axesColors[2]);
-  colorScale(ctx,domain,metric.unit,Math.max(12,w*.17),Math.min(w-12,w*.83),h-15);
+  colorScale(ctx,scale,metric.unit,Math.max(12,w*.17),Math.min(w-12,w*.83),h-15);
 }
