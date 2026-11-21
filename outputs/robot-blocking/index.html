@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>慢慢来 · 机器人粗模摆位</title>
+<style>
+  html,body{margin:0;height:100%;background:#1b1d21;color:#dcdde0;font:14px/1.4 -apple-system,"PingFang SC",system-ui,sans-serif;overflow:hidden}
+  #app{display:flex;height:100%;}
+  #app.portrait{flex-direction:column}
+  #stage{flex:none;display:flex;align-items:center;justify-content:center;padding:8px}
+  canvas{display:block;touch-action:none;border-radius:6px;box-shadow:0 0 0 1px #3a3d44}
+  #panel{flex:1;overflow-y:auto;padding:10px 14px 40px;-webkit-overflow-scrolling:touch}
+  h3{margin:14px 0 6px;font-size:13px;color:#9aa0aa;font-weight:600;letter-spacing:.05em}
+  .row{display:grid;grid-template-columns:7.5em 1fr 3.2em;align-items:center;gap:8px;margin:3px 0}
+  .row label{color:#c8cad0}
+  .row output{text-align:right;color:#9aa0aa;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:#e3a24a}
+  select{width:100%;background:#2a2d33;color:#e0e0e0;border:1px solid #444;border-radius:6px;padding:6px;font-size:14px}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+  button{background:#2c3038;color:#e8e8ea;border:1px solid #474b55;border-radius:8px;padding:8px 12px;font-size:14px}
+  button.on{background:#e3a24a;color:#1b1d21;border-color:#e3a24a}
+  button.main{background:#e3a24a;color:#1b1d21;border-color:#e3a24a;font-weight:600}
+  .tip{color:#8d929c;font-size:12.5px;margin:4px 0 8px}
+  textarea{width:100%;height:90px;background:#22252b;color:#cfd2d8;border:1px solid #444;border-radius:6px;font:12px ui-monospace,monospace}
+  #shot{position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:9}
+  #shot[hidden]{display:none}
+  #shot img{max-height:78vh;max-width:92vw;border-radius:6px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><canvas id="c"></canvas></div>
+  <div id="panel"></div>
+</div>
+<div id="shot" hidden>
+  <img id="shotImg" alt="粗模截图">
+  <div class="tip" style="color:#ddd">长按图片 → 存储到“照片”</div>
+  <div class="btns"><button id="shotClose">关闭</button></div>
+</div>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const cv = $('#c');
+const gl = cv.getContext('webgl2', {antialias: true});
+if (!gl) { document.body.innerHTML = '<p style="padding:20px;color:#ddd">这个浏览器不支持 WebGL2，请更新系统或换浏览器。</p>'; throw new Error('no webgl2'); }
+
+/* ---------- 矩阵（列主序） ---------- */
+const R = Math.PI / 180;
+const M = {
+  I: () => [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1],
+  mul(a, b) { const o = new Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k*4+r] * b[c*4+k]; o[c*4+r] = s; } return o; },
+  T: (x, y, z) => [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1],
+  RX(d) { const c = Math.cos(d*R), s = Math.sin(d*R); return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]; },
+  RY(d) { const c = Math.cos(d*R), s = Math.sin(d*R); return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]; },
+  RZ(d) { const c = Math.cos(d*R), s = Math.sin(d*R); return [c,s,0,0, -s,c,0,0, 0,0,1,0, 0,0,0,1]; },
+  persp(fovy, asp, n, f) { const t = 1 / Math.tan(fovy/2); return [t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0]; },
+  look(e, t, u) {
+    const sub = (a,b) => [a[0]-b[0],a[1]-b[1],a[2]-b[2]], nrm = a => { const l = Math.hypot(...a); return a.map(v => v/l); };
+    const cr = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]], dot = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    const f = nrm(sub(t, e)), s = nrm(cr(f, u)), v = cr(s, f);
+    return [s[0],v[0],-f[0],0, s[1],v[1],-f[1],0, s[2],v[2],-f[2],0, -dot(s,e),-dot(v,e),dot(f,e),1];
+  },
+  apply(m, p) { return [0,1,2].map(r => m[r]*p[0] + m[4+r]*p[1] + m[8+r]*p[2] + m[12+r]); },
+};
+const C = (...ms) => ms.reduce((a, b) => M.mul(a, b));   // 依次相乘
+
+/* ---------- 几何体 ---------- */
+function mk(p, n, idx) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  for (const [loc, data] of [[0, p], [1, n]]) {
+    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+  }
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx), gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return {vao, count: idx.length};
+}
+function grid(cols, rows, fn) {          // fn(u,v) -> [pos, normal]
+  const p = [], n = [], idx = [];
+  for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) { const [a, b] = fn(i/cols, j/rows); p.push(...a); n.push(...b); }
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const a = j*(cols+1)+i, b = a+1, c = a+cols+1, d = c+1; idx.push(a, c, b, b, c, d);
+  }
+  return [p, n, idx];
+}
+function merge(...parts) {
+  const p = [], n = [], idx = [];
+  for (const [pp, nn, ii] of parts) { const o = p.length/3; p.push(...pp); n.push(...nn); idx.push(...ii.map(v => v+o)); }
+  return mk(p, n, idx);
+}
+function ellipsoid(rx, ry, rz) {
+  return merge(grid(40, 24, (u, v) => {
+    const th = u*2*Math.PI, ph = v*Math.PI, x = Math.sin(ph)*Math.cos(th), y = Math.cos(ph), z = Math.sin(ph)*Math.sin(th);
+    const nn = [x/rx, y/ry, z/rz], l = Math.hypot(...nn);
+    return [[rx*x, ry*y, rz*z], nn.map(q => q/l)];
+  }));
+}
+function disc(r, y, up) {
+  return grid(40, 1, (u, v) => { const th = u*2*Math.PI, rr = r*(up ? v : 1-v); return [[rr*Math.cos(th), y, rr*Math.sin(th)], [0, up ? 1 : -1, 0]]; });
+}
+function cyl(r0, r1, y0, y1, caps = true) {   // 沿 y 轴，r0 在 y0，r1 在 y1
+  const k = (r0 - r1) / (y1 - y0);
+  const side = grid(40, 1, (u, v) => {
+    const th = u*2*Math.PI, c = Math.cos(th), s = Math.sin(th), r = r0 + (r1 - r0)*v, l = Math.hypot(1, k);
+    return [[r*c, y0 + (y1-y0)*v, r*s], [c/l, k/l, s/l]];
+  });
+  return caps ? merge(side, disc(r0, y0, false), disc(r1, y1, true)) : merge(side);
+}
+function torus(Rr, r) {                        // 轴沿 y
+  return merge(grid(48, 14, (u, v) => {
+    const a = u*2*Math.PI, b = v*2*Math.PI, cx = Math.cos(a), sx = Math.sin(a);
+    return [[(Rr + r*Math.cos(b))*cx, r*Math.sin(b), (Rr + r*Math.cos(b))*sx], [Math.cos(b)*cx, Math.sin(b), Math.cos(b)*sx]];
+  }));
+}
+function box(w, h, d) {
+  const p = [], n = [], idx = [], X = w/2, Y = h/2, Z = d/2;
+  const faces = [[[1,0,0],[0,1,0],[0,0,1]], [[-1,0,0],[0,1,0],[0,0,-1]], [[0,1,0],[0,0,1],[1,0,0]],
+                 [[0,-1,0],[0,0,-1],[1,0,0]], [[0,0,1],[1,0,0],[0,1,0]], [[0,0,-1],[-1,0,0],[0,1,0]]];
+  const S = [X, Y, Z];
+  for (const [nn, a, b] of faces) {
+    const o = p.length/3;
+    for (const [sa, sb] of [[-1,-1],[1,-1],[1,1],[-1,1]])
+      for (let q = 0; q < 1; q++) { p.push(...[0,1,2].map(i => (nn[i] + a[i]*sa + b[i]*sb) * S[i])); n.push(...nn); }
+    idx.push(o, o+1, o+2, o, o+2, o+3);
+  }
+  return mk(p, n, idx);
+}
+
+/* ---------- 着色器 ---------- */
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s); return s; }
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, `#version 300 es
+layout(location=0) in vec3 aP; layout(location=1) in vec3 aN;
+uniform mat4 uM, uVP; out vec3 vN; out vec3 vW;
+void main(){ vec4 w = uM*vec4(aP,1.); vW = w.xyz; vN = mat3(uM)*aN; gl_Position = uVP*w; }`));
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float; in vec3 vN; in vec3 vW;
+uniform vec3 uC, uL, uLc, uSky, uGnd, uPL, uPLc; uniform float uE, uA; out vec4 o;
+void main(){
+  vec3 n = normalize(vN);
+  vec3 c = uC*(mix(uGnd, uSky, n.y*.5+.5) + uLc*max(dot(n,uL),0.));
+  vec3 L = uPL - vW; float r = length(L);
+  c += uC*uPLc*max(dot(n, L/r), 0.)/(1. + r*r*.012);
+  c += uC*uE;
+  o = vec4(pow(clamp(c,0.,1.), vec3(.95)), uA);
+}`));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog);
+gl.useProgram(prog);
+const U = {}; for (const k of ['uM','uVP','uC','uL','uLc','uSky','uGnd','uPL','uPLc','uE','uA']) U[k] = gl.getUniformLocation(prog, k);
+
+/* ---------- 网格 ---------- */
+const G = {
+  // 房间
+  sill: box(110, 3, 22), wallLow: box(110, 60, 1), wallL: box(40, 100, 1), wallR: box(40, 100, 1), wallTop: box(160, 30, 1),
+  post: box(6, 78, 3), rail: box(82, 3.2, 3), glass: box(82, 74, .2),
+  // 花盆（直径约为机器人身高的一半）
+  pot: cyl(2.25, 3.55, 0, 6.5), rimOut: cyl(3.85, 3.85, 6.4, 7.7, false), rimIn: cyl(3.6, 3.6, 6.5, 7.7, false),
+  rimTop: torus(3.72, .14), soil: cyl(3.6, 3.6, 7.0, 7.15),
+  shPot: cyl(3.1, 3.1, 0, .02), shFoot: cyl(1.6, 1.6, 0, .02),
+  // 植物
+  stemS: cyl(.06, .05, 0, .8), leafS: ellipsoid(.45, .07, .25),
+  stemL: cyl(.09, .07, 0, 4.3), leafL: ellipsoid(.75, .09, .45), petal: ellipsoid(.55, .1, .33), fcenter: ellipsoid(.32, .22, .32),
+  // 机器人（单位：定妆正面图上的 100 像素；全身约 15.5）
+  foot: cyl(1.25, 1.25, 0, .6), leg: cyl(.55, .55, .6, 1.9), body: cyl(2.75, 2.75, 1.9, 7.3), bodyRim: torus(2.75, .1),
+  chestRing: torus(.55, .09), chestLens: cyl(.47, .47, 0, .25),
+  keyShaft: cyl(.15, .15, -3.5, -2.6), keySocket: torus(.3, .08), keyGrip: torus(.47, .13),
+  neck: cyl(1.15, 1.15, 7.3, 8.05), neckRing: torus(1.17, .1),
+  head: ellipsoid(3.15, 2.65, 3.0), eyeHouse: cyl(1.0, 1.0, 0, .5), eyeLens: cyl(.85, .85, 0, .12), eyeRing: torus(1.0, .12),
+  ear: ellipsoid(.42, 1.1, .75), antCollar: cyl(.42, .42, 5.3, 5.5), antRod: cyl(.19, .19, 5.5, 6.65), antBall: ellipsoid(.42, .42, .42),
+  shoulder: ellipsoid(.62, .62, .62), upper: cyl(.42, .42, -1.7, -.55), elbow: ellipsoid(.45, .45, .45),
+  fore: cyl(.42, .42, -1.37, -.32), wrist: cyl(.5, .5, -1.62, -1.37), pin: cyl(.12, .12, -.2, .2),
+  fingerA: box(.14, .75, .28), fingerB: box(.14, .6, .28),
+};
+const COL = {
+  sill: [.86,.86,.83], wall: [.80,.80,.78], frame: [.90,.90,.88],
+  pot: [.74,.43,.29], soil: [.24,.15,.10], leaf: [.32,.62,.27], petal: [.98,.82,.18], fcenter: [.95,.52,.12],
+  green: [.50,.65,.47], greenDk: [.40,.53,.38], metal: [.66,.66,.64], amber: [.96,.62,.12], brass: [.76,.61,.27], copper: [.72,.42,.26],
+};
+const LIGHTS = {
+  rain:    {name: '阴雨天', bg: [.70,.74,.79], L: [-.3,.55,-.75], Lc: [.42,.45,.50], sky: [.64,.68,.74], gnd: [.40,.40,.40], E: .30, PLc: [0,0,0],     glass: [.70,.76,.82], ga: .30},
+  night:   {name: '深夜',   bg: [.05,.07,.13], L: [-.3,.55,-.75], Lc: [.04,.05,.09], sky: [.10,.12,.20], gnd: [.05,.05,.06], E: 1.0, PLc: [1.7,1.05,.38], glass: [.10,.13,.22], ga: .55},
+  morning: {name: '清晨',   bg: [.86,.84,.76], L: [-.35,.4,-.85], Lc: [.85,.78,.62], sky: [.60,.62,.64], gnd: [.42,.40,.36], E: .30, PLc: [0,0,0],     glass: [.88,.86,.78], ga: .25},
+  sun:     {name: '晴天',   bg: [.98,.90,.70], L: [-.5,.7,-.5],   Lc: [1.05,.92,.70], sky: [.60,.60,.60], gnd: [.45,.42,.36], E: .30, PLc: [0,0,0],     glass: [.98,.92,.76], ga: .2},
+  sunset:  {name: '傍晚',   bg: [1.0,.72,.45], L: [-.6,.3,-.7],   Lc: [1.10,.70,.40], sky: [.55,.50,.50], gnd: [.42,.35,.30], E: .40, PLc: [0,0,0],     glass: [1.0,.78,.55], ga: .25},
+};
+for (const l of Object.values(LIGHTS)) { const n = Math.hypot(...l.L); l.L = l.L.map(v => v/n); }
+const POT = [4.3, 0, 0];
+
+/* ---------- 状态与预设 ---------- */
+const BASE = {rx: -4.3, rz: 0, yaw: 60, hyaw: 0, hpitch: 0, lf: 0, lo: 4, lb: 0, rf: 0, ro: 4, rb: 0, plant: 0, light: 'rain',
+              cyaw: 0, cpitch: 3, cdist: 51, tx: 0, ty: 7.7, focal: 50};
+const PRESETS = {
+  S1: {},
+  S3: {light: 'night', hpitch: -22, hyaw: 12},
+  S4: {light: 'morning', plant: 1, rx: -3.0, yaw: 75, hpitch: -30, cyaw: 62, cpitch: 26, cdist: 22, tx: 2.2, ty: 8.8, focal: 70},
+  S5: {light: 'sun', plant: 2, rx: -4.0, yaw: 45, hyaw: 10, hpitch: 25, cyaw: -8, cpitch: -2, cdist: 40, tx: -0.8, ty: 9, focal: 50},
+  S6: {light: 'sunset', plant: 2, rx: -3.3, yaw: 15, hpitch: 5},
+};
+let st = {...BASE}, cur = 'S1';
+
+/* ---------- 场景 ---------- */
+function build() {
+  const L = [], add = (m, mat, c, e = 0, a = 1) => L.push({m, mat, c, e, a});
+  const lt = LIGHTS[st.light];
+  // 房间：窗台、墙、窗框、玻璃
+  add(G.sill, M.T(0, -1.5, 3), COL.sill);
+  add(G.wallLow, M.T(0, -33, 13.5), COL.wall);
+  add(G.wallL, M.T(-45, 45, -8.5), COL.wall);
+  add(G.wallR, M.T(85, 45, -8.5), COL.wall);
+  add(G.wallTop, M.T(20, 92, -8.5), COL.wall);
+  add(G.post, M.T(-25, 39, -6.5), COL.frame);
+  add(G.post, M.T(63, 39, -6.5), COL.frame);
+  add(G.rail, M.T(19, 1.6, -6.5), COL.frame);
+  // 花盆
+  const P = M.T(...POT);
+  add(G.pot, P, COL.pot); add(G.rimOut, P, COL.pot); add(G.rimIn, P, COL.pot); add(G.rimTop, C(P, M.T(0, 7.7, 0)), COL.pot);
+  add(G.soil, P, COL.soil);
+  // 植物
+  const B = C(P, M.T(0, 7.15, 0));
+  if (st.plant === 1) {
+    add(G.stemS, B, COL.leaf);
+    for (const s of [1, -1]) add(G.leafS, C(B, M.T(.4*s, .85, 0), M.RZ(15*s)), COL.leaf);
+  } else if (st.plant === 2) {
+    add(G.stemL, B, COL.leaf);
+    [1.0, 1.8, 2.6, 3.3].forEach((h, k) => add(G.leafL, C(B, M.T(0, h, 0), M.RY(k*100 + 30), M.T(.7, 0, 0), M.RZ(15)), COL.leaf));
+    const F = C(B, M.T(0, 4.35, 0), M.RX(45));
+    for (let k = 0; k < 5; k++) add(G.petal, C(F, M.RY(k*72), M.T(.55, 0, 0)), COL.petal);
+    add(G.fcenter, C(F, M.T(0, .1, 0)), COL.fcenter, .2);
+  }
+  // 机器人
+  const Rt = C(M.T(st.rx, 0, st.rz), M.RY(st.yaw));
+  for (const s of [-1, 1]) { add(G.foot, C(Rt, M.T(1.55*s, 0, 0)), COL.metal); add(G.leg, C(Rt, M.T(1.4*s, 0, 0)), COL.green); }
+  add(G.body, Rt, COL.green);
+  add(G.bodyRim, C(Rt, M.T(0, 1.95, 0)), COL.greenDk); add(G.bodyRim, C(Rt, M.T(0, 7.25, 0)), COL.greenDk);
+  add(G.chestLens, C(Rt, M.T(0, 5.5, 2.62), M.RX(90)), COL.amber, lt.E*1.4);
+  add(G.chestRing, C(Rt, M.T(0, 5.5, 2.78), M.RX(90)), COL.metal);
+  // 发条钥匙：从背部正中水平向后，握柄是竖直的 8 字
+  add(G.keyShaft, C(Rt, M.T(0, 5.4, 0), M.RX(90)), COL.brass);
+  add(G.keySocket, C(Rt, M.T(0, 5.4, -2.72), M.RX(90)), COL.metal);
+  for (const y of [5.92, 4.88]) add(G.keyGrip, C(Rt, M.T(0, y, -3.95), M.RZ(90)), COL.brass);
+  add(G.neck, Rt, COL.metal);
+  for (const y of [7.45, 7.9]) add(G.neckRing, C(Rt, M.T(0, y, 0)), COL.metal);
+  // 头：绕脖子顶部转动
+  const H = C(Rt, M.T(0, 8.05, 0), M.RY(st.hyaw), M.RX(-st.hpitch));
+  add(G.head, C(H, M.T(0, 2.7, 0)), COL.green);
+  for (const s of [-1, 1]) {
+    add(G.eyeHouse, C(H, M.T(1.48*s, 2.2, 2.45), M.RX(90)), COL.metal);
+    add(G.eyeLens, C(H, M.T(1.48*s, 2.2, 2.86), M.RX(90)), COL.amber, lt.E*1.6);
+    add(G.eyeRing, C(H, M.T(1.48*s, 2.2, 2.95), M.RX(90)), COL.metal);
+    add(G.ear, C(H, M.T(3.12*s, 2.0, 0)), COL.metal);
+  }
+  add(G.antCollar, H, COL.metal); add(G.antRod, H, COL.metal); add(G.antBall, C(H, M.T(0, 7.07, 0)), COL.copper);
+  // 手臂：s=+1 是机器人自己的左手（面对镜头时在画面右边）
+  for (const [s, f, o, b] of [[1, st.lf, st.lo, st.lb], [-1, st.rf, st.ro, st.rb]]) {
+    const A = C(Rt, M.T(3.2*s, 6.45, 0), M.RZ(s*o), M.RX(-f));
+    add(G.shoulder, A, COL.metal); add(G.upper, A, COL.green);
+    const E = C(A, M.T(0, -2.03, 0), M.RX(-b));
+    add(G.elbow, E, COL.metal); add(G.fore, E, COL.green); add(G.wrist, E, COL.metal);
+    add(G.pin, C(E, M.T(0, -1.85, 0), M.RX(90)), COL.metal);
+    for (const k of [1, -1]) {
+      const Fg = C(E, M.T(0, -1.85, 0), M.RZ(k*22));
+      add(G.fingerA, C(Fg, M.T(0, -.375, 0)), COL.metal);
+      add(G.fingerB, C(Fg, M.T(0, -.75, 0), M.RZ(-k*35), M.T(0, -.3, 0)), COL.metal);
+    }
+  }
+  // 地面阴影、玻璃（半透明，最后画）
+  const T = [];
+  T.push({m: G.shPot, mat: C(P, M.T(.6, .01, .4)), c: [0,0,0], e: 0, a: .22});
+  for (const s of [-1, 1]) T.push({m: G.shFoot, mat: C(Rt, M.T(1.55*s + .3, .01, .3)), c: [0,0,0], e: 0, a: .25});
+  T.push({m: G.glass, mat: M.T(19, 40, -6.5), c: lt.glass, e: .25, a: lt.ga});
+  const eyes = M.apply(H, [0, 2.2, 3.2]);
+  return {L, T, lt, eyes};
+}
+
+function render() {
+  const w = cv.width, h = cv.height, S = build(), lt = S.lt;
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(...lt.bg, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  const t = [st.tx, st.ty, 0], cp = st.cpitch*R, cy = st.cyaw*R;
+  const eye = [t[0] + st.cdist*Math.cos(cp)*Math.sin(cy), t[1] + st.cdist*Math.sin(cp), t[2] + st.cdist*Math.cos(cp)*Math.cos(cy)];
+  const fovy = 2*Math.atan(18/st.focal);   // 竖拍 9:16，按全画幅长边 36mm 折算
+  gl.uniformMatrix4fv(U.uVP, false, M.mul(M.persp(fovy, w/h, .3, 600), M.look(eye, t, [0, 1, 0])));
+  gl.uniform3fv(U.uL, lt.L); gl.uniform3fv(U.uLc, lt.Lc); gl.uniform3fv(U.uSky, lt.sky); gl.uniform3fv(U.uGnd, lt.gnd);
+  gl.uniform3fv(U.uPL, S.eyes); gl.uniform3fv(U.uPLc, lt.PLc);
+  const draw = d => { gl.uniformMatrix4fv(U.uM, false, d.mat); gl.uniform3fv(U.uC, d.c); gl.uniform1f(U.uE, d.e); gl.uniform1f(U.uA, d.a);
+                      gl.bindVertexArray(d.m.vao); gl.drawElements(gl.TRIANGLES, d.m.count, gl.UNSIGNED_INT, 0); };
+  gl.disable(gl.BLEND); gl.depthMask(true); S.L.forEach(draw);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); S.T.forEach(draw); gl.depthMask(true);
+}
+let pending = false;
+function redraw() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); } }
+
+/* ---------- 面板 ---------- */
+const SL = [
+  ['相机（也可以直接在画面上拖动：单指转、双指缩放和平移）'],
+  ['cyaw', '水平角度', -180, 180, 1], ['cpitch', '俯仰角', -30, 80, 1], ['cdist', '距离', 4, 140, .5],
+  ['tx', '对准点左右', -25, 25, .1], ['ty', '对准点高度', -5, 35, .1], ['focal', '焦距 mm', 18, 135, 1],
+  ['机器人'],
+  ['rx', '左右位置', -25, 20, .1], ['rz', '前后位置', -6, 12, .1], ['yaw', '身体朝向', -180, 180, 1],
+  ['hyaw', '转头', -90, 90, 1], ['hpitch', '抬头 + / 低头 −', -45, 45, 1],
+  ['左臂（机器人自己的左手）'],
+  ['lf', '向前抬', -30, 160, 1], ['lo', '向外张', -10, 100, 1], ['lb', '弯肘', 0, 140, 1],
+  ['右臂'],
+  ['rf', '向前抬', -30, 160, 1], ['ro', '向外张', -10, 100, 1], ['rb', '弯肘', 0, 140, 1],
+];
+const panel = $('#panel'), inputs = {};
+panel.insertAdjacentHTML('beforeend', `
+  <div class="tip">先点一个镜头预设，再微调。满意后点「拍照」，长按图片存到相册，连同定妆图一起交给 GPT image 生成分镜图。花盆固定不动，机器人和相机可调。</div>
+  <h3>镜头预设</h3><div class="btns" id="presets"></div>
+  <div class="btns"><button class="main" id="shootBtn">拍照（1080×1920）</button></div>`);
+for (const k of Object.keys(PRESETS)) {
+  const b = document.createElement('button'); b.textContent = k; b.onclick = () => applyPreset(k); $('#presets').append(b);
+}
+panel.insertAdjacentHTML('beforeend', `<h3>场景</h3>
+  <div class="row"><label>灯光</label><select id="light">${Object.entries(LIGHTS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}</select><span></span></div>
+  <div class="row"><label>植物</label><select id="plant"><option value="0">无</option><option value="1">嫩芽</option><option value="2">开花</option></select><span></span></div>`);
+for (const it of SL) {
+  if (it.length === 1) { panel.insertAdjacentHTML('beforeend', `<h3>${it[0]}</h3>`); continue; }
+  const [k, label, mn, mx, step] = it, row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = `<label>${label}</label><input type="range" min="${mn}" max="${mx}" step="${step}"><output></output>`;
+  const inp = row.querySelector('input'), out = row.querySelector('output');
+  inp.oninput = () => { st[k] = +inp.value; out.textContent = +(+inp.value).toFixed(1); markCustom(); redraw(); };
+  inputs[k] = [inp, out]; panel.append(row);
+}
+panel.insertAdjacentHTML('beforeend', `<h3>参数（可以复制给 Claude，或粘贴回来恢复）</h3>
+  <textarea id="params"></textarea><div class="btns"><button id="showP">显示当前参数</button><button id="copyP">复制</button><button id="loadP">按文本框恢复</button></div><div class="tip" id="pmsg"></div>`);
+$('#light').onchange = e => { st.light = e.target.value; markCustom(); redraw(); };
+$('#plant').onchange = e => { st.plant = +e.target.value; markCustom(); redraw(); };
+$('#showP').onclick = () => { $('#params').value = JSON.stringify(Object.fromEntries(Object.entries(st).map(([k, v]) => [k, typeof v === 'number' ? +v.toFixed(2) : v]))); };
+$('#loadP').onclick = () => { try { st = {...BASE, ...JSON.parse($('#params').value)}; cur = null; sync(); redraw(); $('#pmsg').textContent = '已恢复'; } catch (e) { $('#pmsg').textContent = '参数格式不对'; } };
+$('#copyP').onclick = async () => { $('#showP').onclick(); try { await navigator.clipboard.writeText($('#params').value); $('#pmsg').textContent = '已复制'; } catch (e) { $('#pmsg').textContent = '无法自动复制，请手动全选文本框复制'; } };
+function sync() {
+  for (const [k, [inp, out]] of Object.entries(inputs)) { inp.value = st[k]; out.textContent = +(+st[k]).toFixed(1); }
+  $('#light').value = st.light; $('#plant').value = st.plant;
+  document.querySelectorAll('#presets button').forEach(b => b.classList.toggle('on', b.textContent === cur));
+}
+function markCustom() { if (cur) { cur = null; sync(); } }
+function applyPreset(k) { st = {...BASE, ...PRESETS[k]}; cur = k; sync(); redraw(); }
+
+/* ---------- 拍照 ---------- */
+$('#shootBtn').onclick = () => {
+  const w = cv.width, h = cv.height; cv.width = 1080; cv.height = 1920; render();
+  const url = cv.toDataURL('image/png'); cv.width = w; cv.height = h; render();
+  $('#shotImg').src = url; $('#shot').hidden = false;
+};
+$('#shotClose').onclick = () => { $('#shot').hidden = true; };
+
+/* ---------- 触控 / 鼠标 ---------- */
+const pts = new Map(); let last = null;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function gesture() {
+  const p = [...pts.values()];
+  if (p.length === 1) return {x: p[0].x, y: p[0].y, d: 0, n: 1};
+  return {x: (p[0].x + p[1].x)/2, y: (p[0].y + p[1].y)/2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), n: 2};
+}
+function pan(dx, dy) {
+  const k = st.cdist * .0022, cy = st.cyaw*R;
+  st.tx = clamp(st.tx - dx*k*Math.cos(cy), -25, 25); st.ty = clamp(st.ty + dy*k, -5, 35);
+}
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, {x: e.clientX, y: e.clientY}); last = gesture(); });
+cv.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  const g = gesture(); if (!last || g.n !== last.n) { last = g; return; }
+  const dx = g.x - last.x, dy = g.y - last.y;
+  if (g.n === 1 && !e.shiftKey) { st.cyaw = ((st.cyaw - dx*.35 + 540) % 360) - 180; st.cpitch = clamp(st.cpitch + dy*.3, -30, 80); }
+  else if (g.n === 1) pan(dx, dy);
+  else { if (last.d > 0 && g.d > 0) st.cdist = clamp(st.cdist * last.d / g.d, 4, 140); pan(dx, dy); }
+  last = g; markCustom(); sync(); redraw();
+});
+const up = e => { pts.delete(e.pointerId); last = pts.size ? gesture() : null; };
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+cv.addEventListener('wheel', e => { e.preventDefault(); st.cdist = clamp(st.cdist * (1 + e.deltaY*.001), 4, 140); markCustom(); sync(); redraw(); }, {passive: false});
+
+/* ---------- 布局：画布固定 9:16 ---------- */
+function layout() {
+  const W = innerWidth, Hh = innerHeight, portrait = W < Hh * .9;
+  $('#app').classList.toggle('portrait', portrait);
+  let h = portrait ? Math.min(Hh*.6, (W - 16)*16/9) : Hh - 16, w = h*9/16;
+  cv.style.width = w + 'px'; cv.style.height = h + 'px';
+  const dpr = Math.min(devicePixelRatio || 1, 2); cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  redraw();
+}
+addEventListener('resize', layout);
+applyPreset('S1'); layout();
+</script>
+</body>
+</html>
