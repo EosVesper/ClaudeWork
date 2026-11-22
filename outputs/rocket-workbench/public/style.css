@@ -1,7 +1,15 @@
+/* ---------- Formula face (STIX Two, OFL; see fonts/README.md) ---------- */
+@font-face { font-family: "Formula"; src: url("fonts/stix-two-text.woff2") format("woff2"); font-style: normal; font-weight: 400; font-display: swap; }
+@font-face { font-family: "Formula"; src: url("fonts/stix-two-text-italic.woff2") format("woff2"); font-style: italic; font-weight: 400; font-display: swap; }
+@font-face { font-family: "Formula"; src: url("fonts/stix-two-math-ops.woff2") format("woff2"); font-style: normal; font-weight: 400; font-display: swap;
+  unicode-range: U+2032-2034, U+2113, U+2190-23FF, U+27E8-27E9; }
+@font-face { font-family: "Formula"; src: url("fonts/stix-two-math-ops.woff2") format("woff2"); font-style: italic; font-weight: 400; font-display: swap;
+  unicode-range: U+2032-2034, U+2113, U+2190-23FF, U+27E8-27E9; }
+
 /* ---------- Design tokens ---------- */
 :root {
   --font-sans: "Inter", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", system-ui, sans-serif;
-  --font-math: "Cambria Math", "STIX Two Math", "Latin Modern Math", serif;
+  --font-math: "Formula", "Cambria Math", "STIX Two Math", "Latin Modern Math", serif;
   --radius-lg: 16px;
   --radius: 10px;
   --radius-sm: 7px;
@@ -81,11 +89,17 @@ h3 { font-size: .9rem; font-weight: 600; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 ::selection { background: var(--accent-soft); }
 
-/* Numbers use the UI sans with tabular figures; only italic physical
-   symbols use the math face. */
-.math { font-family: inherit; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
-.math i { font-family: var(--font-math); font-style: italic; letter-spacing: .01em; }
-.math sub, .math sup { font-size: .72em; line-height: 0; }
+/* Formulas and symbols (.math.sym) use the math face throughout —
+   letters, subscripts, operators and digits. Data values and units
+   (.math.num) use the UI sans with tabular figures. */
+.math { font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+.math.num { font-family: inherit; }
+.math.sym, .math i { font-family: var(--font-math); font-weight: 400; font-size: 1.07em; letter-spacing: .005em; }
+.math i { font-style: italic; }
+.math.sym i { font-size: 1em; }
+.math sub, .math sup { font-size: .7em; line-height: 0; }
+.math.sym sub { margin-left: .04em; }
+h2 .math.sym, h3 .math.sym, .stat-label .math.sym, th .math.sym { font-weight: 400; }
 .unit-cell { color: var(--text-3); white-space: nowrap; }
 
 /* ---------- Top bar ---------- */

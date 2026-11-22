@@ -1129,7 +1129,7 @@
     "status": "pass"
    }
   ],
-  "seconds": 7.603492576999997,
+  "seconds": 7.8923455799999935,
   "command": [
    "rocket_thermo.exe",
    "LOX",
@@ -2266,7 +2266,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 7.603492576999997,
+   "seconds": 7.8923455799999935,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -3390,7 +3390,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 7.589823986000003,
+   "seconds": 7.871716293000005,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -4451,7 +4451,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 2.5839345220000105,
+   "seconds": 7.345883541999996,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -5660,7 +5660,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 2.605320593000011,
+   "seconds": 3.1650998010000038,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -6854,7 +6854,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 7.708193448999999,
+   "seconds": 8.17497133,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -7985,7 +7985,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 7.485821661000009,
+   "seconds": 7.621598908999993,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -8302,5 +8302,5 @@
   "source": "蓝箭航天招股书 1-1-210 页",
   "url": "https://static.sse.com.cn/stock/disclosure/announcement/c/202512/002174_20251231_1QK0.pdf#page=211"
  },
- "createdAt": "2026-11-22T06:57:13.798Z"
+ "createdAt": "2026-11-22T07:18:23.816Z"
 }

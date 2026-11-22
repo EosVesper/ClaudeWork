@@ -1,5 +1,5 @@
 import { caption, colors, extent, format, heatmap, linearChart, nozzleGeometry, nozzleMap, nozzleSurface, surface, theme } from './charts.mjs';
-import { mathHtml as m, mathText, numericSource, unitSource } from './math.mjs';
+import { mathHtml as m, mathText, numericSource, richHtml, unitSource } from './math.mjs';
 import { defaultLosses, divergence, envelope, envelopeMetrics, judgePublic, lossFactors, validLosses } from './losses.mjs';
 
 const $ = selector => document.querySelector(selector);
@@ -87,7 +87,7 @@ const btn = (id, title) => `<button id="${id}" type="button">${title}</button>`;
 const link = (url, label) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
 // Tables: a column whose cells are mostly numbers is right-aligned,
 // header included, so digits line up.
-const numericCell = value => /^(<span class="math">|—$|−?\d)/.test(String(value));
+const numericCell = value => /^(<span class="math num">|—$|−?\d)/.test(String(value));
 const fields = (head, rows) => {
   const numericColumn = head.map((_, c) => c > 0 && rows.length > 0
     && rows.filter(row => numericCell(row[c])).length >= Math.ceil(rows.length / 2));
@@ -691,7 +691,7 @@ function lossTable(record) {
     const cell = key => `<input class="loss-input" type="number" step="${f.step}" data-loss="${f.id}" data-key="${key}" value="${cur[key]}" aria-label="${esc(f.label)} ${key}">`;
     const lam = f.id === 'angle' ? `<br><span class="stat-detail">${m('λ',false)} ${sig(divergence(cur.max),4)} / ${sig(divergence(cur.nom),4)} / ${sig(divergence(cur.min),4)}</span>` : '';
     return [`${esc(f.label)} ${m(f.symbol)}`, cell('min'), cell('nom'), cell('max') + lam,
-      `${esc(f.note)}<br>${f.url ? link(f.url, f.source) : esc(f.source)}`];
+      `${richHtml(f.note, esc)}<br>${f.url ? link(f.url, f.source) : esc(f.source)}`];
   });
   return fields(['损失因子','下限','名义','上限','依据'], rows);
 }
@@ -718,7 +718,7 @@ function validationView() {
     ${failed.map(item=>`<p class="notice">${esc(item.model)} · ${m('Q')} ${quantity(item.heat,'kJ/kg')} 的计算失败：${esc(item.message)}</p>`).join('')}
     ${boundRows.length ? fields(['指标','下界与工况','上界与工况','下界相对上界',...(hasHeat ? ['中间热损失样点'] : [])], boundRows)
       : '<p class="notice">当前只算了单工况。运行「计算工况区间」以加入冻结流下限。</p>'}
-    <p class="panel-note">平衡流是理想上限，冻结流对应化学反应完全来不及进行的极限，真实喷管介于两者之间。这一层只包含热力学模型差异，不含燃烧、扩张、摩擦等实际损失，所以公开实测或设计值通常低于该区间。${hasHeat ? '热损失 Q 为可选敏感性输入：再生冷却发动机的壁面热流大部分回到推进剂，不宜整体计为损失。' : ''}</p>
+    <p class="panel-note">平衡流是理想上限，冻结流对应化学反应完全来不及进行的极限，真实喷管介于两者之间。这一层只包含热力学模型差异，不含燃烧、扩张、摩擦等实际损失，所以公开实测或设计值通常低于该区间。${hasHeat ? `热损失 ${m('Q')} 为可选敏感性输入：再生冷却发动机的壁面热流大部分回到推进剂，不宜整体计为损失。` : ''}</p>
   </section>`;
 
   // ② loss factors and ③ delivered envelope
@@ -750,14 +750,14 @@ function validationView() {
     ref.comparable ? ng(ref.deltaNominal) : `<span class="stat-detail">${esc(ref.reason)}</span>`,
     ref.inside === null ? badge('待判定') : badge(ref.inside ? '在包络内' : '超出包络', ref.inside ? 'pass' : 'review'),
     ref.requiredEfficiency ? sig(ref.requiredEfficiency,4) : '—',
-    `${esc(ref.basis)}<br>${link(ref.url,ref.source)}${ref.note ? `<br><span class="stat-detail">${esc(ref.note)}</span>` : ''}`,
+    `${esc(ref.basis)}<br>${link(ref.url,ref.source)}${ref.note ? `<br><span class="stat-detail">${richHtml(ref.note, esc)}</span>` : ''}`,
   ]);
   const flowLine = implied ? `<p class="panel-note">流量诊断：公开推力 ÷ 公开比冲 = ${quantity(implied.total,'kg/s',4)}（${esc(implied.condition)}）。${implied.ratio ? `输入的主推力室流量为其 ${sig(100*implied.ratio,4)}%${Math.abs(implied.ratio-1) < .005 ? '，两者同源，推力对比不独立。' : `，相当于假设 ${sig(100*(1-implied.ratio),3)}% 的流量不经过主推力室。`}` : '主推力室流量未知。'}</p>` : '';
   const publicSection = `<section class="panel">
     ${header('④ 公开值对照', `比较层级：${env?.engine ? '整机（含燃气发生器排气）' : '推力室'}。偏差 = 公开值 / 名义交付值 − ${m('1',true)}。所需综合效率 = 公开比冲 / 理想平衡流比冲。`)}
     ${judged.length ? fields(['指标','公开值','名义交付与包络','相对名义','包络判定','所需综合效率','口径、依据和出处'], publicRows) : '<p class="panel-note">此算例暂无已录入的同型号公开基准。</p>'}
     ${flowLine}
-    <details class="advanced"><summary>查看资料及型号口径</summary><ul class="sources">${state.catalog.benchmarkContext.map(item=>`<li>${esc(item.description)} ${link(item.url,item.label)}</li>`).join('')}</ul></details>
+    <details class="advanced"><summary>查看资料及型号口径</summary><ul class="sources">${state.catalog.benchmarkContext.map(item=>`<li>${richHtml(item.description, esc)} ${link(item.url,item.label)}</li>`).join('')}</ul></details>
   </section>`;
 
   // ⑤ independent reference
@@ -934,6 +934,13 @@ function applyTheme(name, persist = false) {
   applyTheme(saved === 'light' || saved === 'dark' ? saved : system);
 })();
 on('#theme-toggle', 'click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+// Canvas text does not trigger web-font loading; load the formula faces
+// explicitly and redraw once they are ready.
+if (document.fonts?.load) {
+  Promise.all(['16px Formula', 'italic 16px Formula', '16px Formula'].map((spec, i) =>
+    document.fonts.load(spec, i === 2 ? '√≈∗' : 'Tpcηλ'))).then(() => state.redraw?.()).catch(() => {});
+}
 
 async function init() {
   $('#run').disabled = $('#run-range').disabled = true;

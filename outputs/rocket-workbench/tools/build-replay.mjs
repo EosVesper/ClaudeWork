@@ -76,12 +76,22 @@ const loader = `
     const charts = url(parts.charts.replaceAll('./math.mjs', math));
     await import(url(parts.app.replaceAll('./math.mjs', math).replaceAll('./losses.mjs', losses).replaceAll('./charts.mjs', charts)));`;
 const iconUri = `data:image/svg+xml,${encodeURIComponent(icon)}`;
+// Inline the formula fonts so the single-file replay renders the same.
+const fontNames = ['stix-two-text.woff2', 'stix-two-text-italic.woff2', 'stix-two-math-ops.woff2'];
+let pageCss = css;
+for (const name of fontNames) {
+  const data = await readFile(new URL(`fonts/${name}`, root));
+  pageCss = pageCss.replaceAll(`url("fonts/${name}")`, `url("data:font/woff2;base64,${data.toString('base64')}")`);
+}
+// Function replacers: the inserted code contains "$" sequences that a
+// string replacement would interpret as substitution patterns.
+const replayNote = '.replay-note{margin:0;padding:7px 16px;background:#14161b;color:#c9cfda;text-align:center;font-size:12.5px;letter-spacing:.02em;border-bottom:1px solid rgba(240,136,62,.35)}.replay-note::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#f0883e;margin-right:8px;vertical-align:middle}';
 const page = html
-  .replace('<link rel="icon" href="/icon.svg">', `<link rel="icon" href="${iconUri}">`)
-  .replace('<link rel="stylesheet" href="/style.css">', `<style>${css}\n.replay-note{margin:0;padding:7px 16px;background:#14161b;color:#c9cfda;text-align:center;font-size:12.5px;letter-spacing:.02em;border-bottom:1px solid rgba(240,136,62,.35)}.replay-note::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#f0883e;margin-right:8px;vertical-align:middle}</style>`)
-  .replace('<script type="module" src="/app.mjs"></script>', `<script type="module">${loader}\n  </script>`)
-  .replaceAll('src="/icon.svg"', `src="${iconUri}"`)
-  .replace('<body>', `<body>\n<p class="replay-note">离线回放 · 界面与数据均为当前版本的真实 C 求解器输出快照 · 自定义工况请启动源工程</p>`);
+  .replace('<link rel="icon" href="/icon.svg">', () => `<link rel="icon" href="${iconUri}">`)
+  .replace('<link rel="stylesheet" href="/style.css">', () => `<style>${pageCss}\n${replayNote}</style>`)
+  .replace('<script type="module" src="/app.mjs"></script>', () => `<script type="module">${loader}\n  </script>`)
+  .replaceAll('src="/icon.svg"', () => `src="${iconUri}"`)
+  .replace('<body>', () => '<body>\n<p class="replay-note">离线回放 · 界面与数据均为当前版本的真实 C 求解器输出快照 · 自定义工况请启动源工程</p>');
 await mkdir(dirname(out), { recursive: true });
 await writeFile(out, page);
 console.log(`wrote ${out} (${(page.length / 1024).toFixed(0)} KB, ${snapshots.length} snapshots)`);

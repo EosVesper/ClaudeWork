@@ -14,6 +14,9 @@ const assets = {
   '/losses.mjs': ['losses.mjs', 'text/javascript'],
   '/style.css': ['style.css', 'text/css'],
   '/icon.svg': ['icon.svg', 'image/svg+xml'],
+  '/fonts/stix-two-text.woff2': ['fonts/stix-two-text.woff2', 'font/woff2'],
+  '/fonts/stix-two-text-italic.woff2': ['fonts/stix-two-text-italic.woff2', 'font/woff2'],
+  '/fonts/stix-two-math-ops.woff2': ['fonts/stix-two-math-ops.woff2', 'font/woff2'],
 };
 let active = 0;
 
@@ -51,7 +54,8 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && Object.hasOwn(assets, path)) {
       const [file, type] = assets[path];
       const data = await readFile(new URL(`./public/${file}`, import.meta.url));
-      res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-cache' });
+      const charset = type.startsWith('font/') ? '' : '; charset=utf-8';
+      res.writeHead(200, { 'Content-Type': `${type}${charset}`, 'Cache-Control': 'no-cache' });
       res.end(data);
       return;
     }

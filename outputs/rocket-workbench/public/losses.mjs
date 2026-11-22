@@ -7,10 +7,10 @@ export const gravity = 9.80665;
 // user replace them with values from the course or a test report.
 export const lossFactors = [
   { id: 'cstar', label: '燃烧效率', symbol: 'η_{c*}', unit: '1', min: 0.96, nom: 0.98, max: 0.995, step: 0.001,
-    note: '燃烧室综合效率；约 98% 为常见值。第一次大作业基准取 η_c* = η_CF = 0.97，并在报告中注明偏保守（现代液氧甲烷 0.98–0.99）。',
+    note: '燃烧室综合效率；约 98% 为常见值。第一次大作业基准取 $η_{c*} = η_{CF} = 0.97$，并在报告中注明偏保守（现代液氧甲烷 0.98–0.99）。',
     source: 'RocketIsp 效率文档', url: 'https://rocketisp.readthedocs.io/en/latest/efficiencies.html' },
   { id: 'angle', label: '喷管出口半角', symbol: 'α_{e}', unit: '°', min: 8, nom: 10, max: 15, step: 0.5,
-    note: '扩张损失 λ = (1 + cos α)/2；15° 锥形喷管 λ = 0.983，钟形喷管出口角通常更小。',
+    note: '扩张损失 $λ = (1 + cos α)/2$；15° 锥形喷管 $λ = 0.983$，钟形喷管出口角通常更小。',
     source: 'Malina 修正（Sutton《火箭发动机基础》第 3 章）', url: 'https://en.wikipedia.org/wiki/Thrust_coefficient' },
   { id: 'bl', label: '边界层与摩擦', symbol: 'η_{BL}', unit: '1', min: 0.985, nom: 0.99, max: 0.995, step: 0.001,
     note: '摩擦效率约 0.99；室压和喉径越大损失越小，面积比越大损失越大。',
@@ -19,7 +19,7 @@ export const lossFactors = [
     note: '不进入主推力室的流量（燃气发生器等）占整机流量的比例。第一次大作业据一项液氧甲烷燃气发生器循环一级发动机方案（室压 12 MPa、面积比 20：燃气发生器 65.8 kg/s，整机 699.4 kg/s，即 9.41%）取 0.09，探索范围 0.05–0.13；该研究原文献在作业中尚待补齐。',
     source: '第一次大作业「参数确定」', url: '' },
   { id: 'ggRatio', label: '涡轮排气速度比', symbol: 'c_{GG}/c', unit: '1', min: 0.3, nom: 0.45, max: 0.65, step: 0.05, cycle: 'gg',
-    note: 'δI/I ≈ (ṁ_GG/ṁ)(1 − c_GG/c)；F-1 算例的整机损失约 1.1%。',
+    note: '$δI/I ≈ (ṁ_{GG}/ṁ)(1 − c_{GG}/c)$；F-1 算例的整机损失约 1.1%。',
     source: 'MIT 16.512 第 25 讲', url: 'https://ocw.mit.edu/courses/16-512-rocket-propulsion-fall-2005/8b2220397190eb677d156c4b486dd069_lecture_25.pdf' },
 ];
 
@@ -127,11 +127,11 @@ export function judgePublic(record, env, losses = defaultLosses()) {
     const ideal = env.ideal[ref.metric];
     let note = '';  // explanation shown under the source column
     if (ref.thrust && flowShared) note = '输入流量由同一组公开推力与比冲换算，推力偏差等同于比冲偏差，不算独立验证。';
-    else if (ref.thrust && branchShared) note = `输入的主推力室流量 = 公开推力 ÷ 公开比冲 × (1 − β)，β = ${losses.gg.nom}（第一次大作业）。整机流量因此与公开值同源，推力偏差等同于比冲偏差，不算独立验证。`;
+    else if (ref.thrust && branchShared) note = `输入的主推力室流量 = 公开推力 ÷ 公开比冲 × $(1 − β)$，$β = ${losses.gg.nom}$（第一次大作业）。整机流量因此与公开值同源，推力偏差等同于比冲偏差，不算独立验证。`;
     else if (ref.thrust && implied?.ratio != null) note = `公开值隐含总流量 ${implied.total.toFixed(1)} kg/s，输入为其 ${(100 * implied.ratio).toFixed(1)}%。推力判定受流量口径支配。`;
     const inside = usable ? ref.value >= low && ref.value <= high : null;
     if (!note && inside === false && !ref.thrust && ref.value > high) {
-      note = '公开值高于包络上限。可检查：实际面积比是否更大、涡轮排气是否引入喷管延伸段（提高 c_GG/c）、支路份额是否更小，或公开值是否为设计目标而非实测。';
+      note = '公开值高于包络上限。可检查：实际面积比是否更大、涡轮排气是否引入喷管延伸段（提高 $c_{GG}/c$）、支路份额是否更小，或公开值是否为设计目标而非实测。';
     } else if (!note && inside === false && !ref.thrust) {
       note = '公开值低于包络下限，说明实际损失大于所设因子范围，或公开值口径不同。';
     }

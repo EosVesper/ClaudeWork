@@ -55,7 +55,7 @@ export const benchmarkContext = [
   { description: '朱雀三号遥一（2025-12）采用天鹊 12A/15A；此处 B 型数据为 2023 年发布的设计指标。', label: '蓝箭航天遥一通报', url: 'https://www.landspace.com/news-detail.html?itemid=66' },
   { description: '招股书第 1-1-210 页列出天鹊-12B：燃气发生器循环，海平面推力 102 吨，海平面比冲 293 秒，混合比 2.9，进展为整机试车。', label: '蓝箭航天招股书', url: sse },
   { description: '长征十号乙首飞公开的起飞推力属于整箭。YF-100K 比对采用系列文献的单机口径。', label: '火箭院长十乙首飞通报', url: 'https://calt.spacechina.com/n689/c2573694/content.html' },
-  { description: '燃气发生器循环比冲损失 δIsp/Isp ≈ (ṁ_GG/ṁ)(1 − c_GG/c)；F-1 算例约 1.1%。', label: 'MIT 16.512 第 25 讲（Martinez-Sanchez）', url: 'https://ocw.mit.edu/courses/16-512-rocket-propulsion-fall-2005/8b2220397190eb677d156c4b486dd069_lecture_25.pdf' },
+  { description: '燃气发生器循环比冲损失 $δI_{sp}/I_{sp} ≈ (ṁ_{GG}/ṁ)(1 − c_{GG}/c)$；F-1 算例约 1.1%。', label: 'MIT 16.512 第 25 讲（Martinez-Sanchez）', url: 'https://ocw.mit.edu/courses/16-512-rocket-propulsion-fall-2005/8b2220397190eb677d156c4b486dd069_lecture_25.pdf' },
   { description: '交付比冲按各损失效率连乘；燃烧室综合效率约 98% 为常见值；动力学损失由喷管尺寸主导。', label: 'RocketIsp 效率文档', url: 'https://rocketisp.readthedocs.io/en/latest/efficiencies.html' },
   { description: '给定环境推力按动量项与压强项复算，比冲按标准重力加速度换算。', label: 'NASA Glenn 推力方程', url: 'https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/rocket-thrust-equation/' },
 ];

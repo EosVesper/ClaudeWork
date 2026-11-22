@@ -55,7 +55,8 @@ function frame(canvas) {
 export function caption(ctx, value, x, y, align = 'left', fill = theme().text, size = 12) {
   const runs = (Array.isArray(value) ? value.flat(Infinity) : [value])
     .map(run => typeof run === 'string' ? { text: run } : run);
-  const fontFor = run => `${run.italic ? 'italic ' : ''}${run.level ? size * .74 : size}px ${run.math && run.italic ? mathFont : font}`;
+  const formula = run => run.math && (run.italic || run.formula);
+  const fontFor = run => `${run.italic ? 'italic ' : ''}${(run.level ? size * .74 : size) * (formula(run) ? 1.08 : 1)}px ${formula(run) ? mathFont : font}`;
   const widths = runs.map(run => {
     ctx.font = fontFor(run);
     return ctx.measureText(run.text).width;
