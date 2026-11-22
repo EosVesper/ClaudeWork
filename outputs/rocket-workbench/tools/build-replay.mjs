@@ -78,9 +78,9 @@ const loader = `
 const iconUri = `data:image/svg+xml,${encodeURIComponent(icon)}`;
 const page = html
   .replace('<link rel="icon" href="/icon.svg">', `<link rel="icon" href="${iconUri}">`)
-  .replace('<link rel="stylesheet" href="/style.css">', `<style>${css}\n.replay-note{margin:0;padding:9px 16px;background:#253328;color:#d5f1dd;text-align:center;font-size:14px}</style>`)
+  .replace('<link rel="stylesheet" href="/style.css">', `<style>${css}\n.replay-note{margin:0;padding:7px 16px;background:#14161b;color:#c9cfda;text-align:center;font-size:12.5px;letter-spacing:.02em;border-bottom:1px solid rgba(240,136,62,.35)}.replay-note::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#f0883e;margin-right:8px;vertical-align:middle}</style>`)
   .replace('<script type="module" src="/app.mjs"></script>', `<script type="module">${loader}\n  </script>`)
-  .replace('<img width="34" height="34" src="/icon.svg" alt="">', `<img width="34" height="34" src="${iconUri}" alt="">`)
+  .replaceAll('src="/icon.svg"', `src="${iconUri}"`)
   .replace('<body>', `<body>\n<p class="replay-note">离线回放 · 界面与数据均为当前版本的真实 C 求解器输出快照 · 自定义工况请启动源工程</p>`);
 await mkdir(dirname(out), { recursive: true });
 await writeFile(out, page);

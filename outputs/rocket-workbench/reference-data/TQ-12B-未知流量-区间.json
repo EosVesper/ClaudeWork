@@ -1129,7 +1129,7 @@
     "status": "na"
    }
   ],
-  "seconds": 7.777344173000005,
+  "seconds": 7.727859549000001,
   "command": [
    "rocket_thermo.exe",
    "LOX",
@@ -2266,7 +2266,7 @@
      "status": "na"
     }
    ],
-   "seconds": 7.777344173000005,
+   "seconds": 7.727859549000001,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -3472,7 +3472,7 @@
      "status": "na"
     }
    ],
-   "seconds": 7.563645590999993,
+   "seconds": 7.5042052169999955,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -3694,5 +3694,5 @@
   "source": "蓝箭航天招股书 1-1-210 页",
   "url": "https://static.sse.com.cn/stock/disclosure/announcement/c/202512/002174_20251231_1QK0.pdf#page=211"
  },
- "createdAt": "2026-11-22T06:32:18.284Z"
+ "createdAt": "2026-11-22T06:56:43.395Z"
 }

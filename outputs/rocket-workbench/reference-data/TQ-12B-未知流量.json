@@ -1129,7 +1129,7 @@
     "status": "na"
    }
   ],
-  "seconds": 7.780201393999989,
+  "seconds": 7.782177240999998,
   "command": [
    "rocket_thermo.exe",
    "LOX",
@@ -1250,5 +1250,5 @@
   "source": "蓝箭航天招股书 1-1-210 页",
   "url": "https://static.sse.com.cn/stock/disclosure/announcement/c/202512/002174_20251231_1QK0.pdf#page=211"
  },
- "createdAt": "2026-11-22T06:32:02.935Z"
+ "createdAt": "2026-11-22T06:56:28.155Z"
 }

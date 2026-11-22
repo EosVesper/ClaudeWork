@@ -1,4 +1,4 @@
-import { caption, colors, extent, format, heatmap, linearChart, nozzleGeometry, nozzleMap, nozzleSurface, surface } from './charts.mjs';
+import { caption, colors, extent, format, heatmap, linearChart, nozzleGeometry, nozzleMap, nozzleSurface, surface, theme } from './charts.mjs';
 import { mathHtml as m, mathText, numericSource, unitSource } from './math.mjs';
 import { defaultLosses, divergence, envelope, envelopeMetrics, judgePublic, lossFactors, validLosses } from './losses.mjs';
 
@@ -6,7 +6,8 @@ const $ = selector => document.querySelector(selector);
 const form = $('#case-form');
 const panel = $('#result-panel');
 const stageLabels = { scan: '搜索温区', brent: 'Brent 求根', final: '最终复算' };
-const modelColors = { scan: colors[1], brent: colors[0], final: colors[2] };
+const stageColor = { scan: 0, brent: 2, final: 1 };
+const modelColors = new Proxy({}, { get: (_, stage) => colors[stageColor[stage]] });
 const profileMetrics = [
   { id: 'T_K', label: '温度', symbol: 'T', unit: 'K', read: p => p.T_K },
   { id: 'p_Pa', label: '绝对压强', symbol: 'p', unit: 'MPa', log: true, read: p => p.p_Pa / 1e6 },
@@ -57,7 +58,7 @@ function sig(value, digits = 5) {
   const decimals = Math.max(0, digits - 1 - Math.floor(Math.log10(abs)));
   return m(numericSource(Number(value.toFixed(decimals)), decimals), true);
 }
-const unitCell = units => units === '1' ? '<span class="stat-detail">量纲一</span>' : unit(units);
+const unitCell = units => `<span class="unit-cell">${units === '1' ? '量纲一' : unit(units)}</span>`;
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -84,9 +85,17 @@ const header = (title, caption = '', tools = '') =>
   `<div class="panel-top"><div><h2>${title}</h2>${caption ? `<p>${caption}</p>` : ''}</div>${tools ? `<div class="toolbar">${tools}</div>` : ''}</div>`;
 const btn = (id, title) => `<button id="${id}" type="button">${title}</button>`;
 const link = (url, label) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
-const fields = (head, rows) => `<div class="scroll-table"><table><thead><tr>${head.map(h => `<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${
-  rows.map(([first,...rest]) => `<tr><th scope="row">${first}</th>${rest.map(v => `<td>${v}</td>`).join('')}</tr>`).join('')
-}</tbody></table></div>`;
+// Tables: a column whose cells are mostly numbers is right-aligned,
+// header included, so digits line up.
+const numericCell = value => /^(<span class="math">|—$|−?\d)/.test(String(value));
+const fields = (head, rows) => {
+  const numericColumn = head.map((_, c) => c > 0 && rows.length > 0
+    && rows.filter(row => numericCell(row[c])).length >= Math.ceil(rows.length / 2));
+  const cls = c => numericColumn[c] ? ' class="num"' : '';
+  return `<div class="scroll-table"><table><thead><tr>${head.map((h, c) => `<th scope="col"${cls(c)}>${h}</th>`).join('')}</tr></thead><tbody>${
+    rows.map(([first,...rest]) => `<tr><th scope="row">${first}</th>${rest.map((v, i) => `<td${cls(i + 1)}>${v}</td>`).join('')}</tr>`).join('')
+  }</tbody></table></div>`;
+};
 
 async function request(url, opts) {
   const response = await fetch(url, opts);
@@ -243,14 +252,15 @@ function png(id, name) {
   canvas.width = source.width;
   canvas.height = source.height + top;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#0d1b23';
+  const t = theme();
+  ctx.fillStyle = t.bg;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(source, 0, top);
   const { title, symbol, unit: units } = source.dataset;
   const label = symbol ? [title,' ',mathText(symbol),mathText(` [${unitSource(units)}]`,true)] : title || source.getAttribute('aria-label');
-  caption(ctx,label,14*ratio,19*ratio,'left','#e8f0f1',18*ratio);
-  ctx.fillStyle = '#a4b9c0';
-  ctx.font = `${12*ratio}px "Microsoft YaHei UI",sans-serif`;
+  caption(ctx,label,14*ratio,19*ratio,'left',t.strong,18*ratio);
+  ctx.fillStyle = t.text;
+  ctx.font = `${12*ratio}px "Inter","PingFang SC","Microsoft YaHei UI",sans-serif`;
   ctx.fillText(`${caseName(state.record.input)} · C 求解器 · ${state.record.createdAt.slice(0,10)}`, 14 * ratio, 43 * ratio);
   canvas.toBlob(blob => { if (blob) download(name + '.png', blob, 'image/png'); });
 }
@@ -293,7 +303,7 @@ function stat(label, value, unit, digits, detail) {
 }
 
 function caseLegend(cases) {
-  return `<div class="legend">${cases.map((item, index) => `<span><i class="series-${index % colors.length}"></i>${item.displayName ?? esc(item.name)}</span>`).join('')}<span><i class="amber"></i>首条曲线喉部</span></div>`;
+  return `<div class="legend">${cases.map((item, index) => `<span><i class="series-${index % colors.length}"></i>${item.displayName ?? esc(item.name)}</span>`).join('')}<span><i class="series-1 dot"></i>首条曲线喉部</span></div>`;
 }
 
 function profilePlots(cases, axis, sampleReadout = true) {
@@ -330,7 +340,7 @@ function profilePlots(cases, axis, sampleReadout = true) {
         series, xTicks: xt, xDomain: [0, axis === 'pressure' ? span : 1],
         xFormat: x => axis === 'pressure' ? mathText(x === 0 ? '1' : `10^{${-Math.round(x / Math.LN10)}}`, true) : mathText(numericSource(x,3),true),
         xLabel: axis === 'pressure' ? ['压强比 ', mathText('p/p_{c}'),'（对数刻度）'] : ['归一化膨胀进度 ',mathText('ξ')],
-        refs: includeThroat ? [{x:throatX, dot:metric.read(base.throat), color:colors[2]}] : [],
+        refs: includeThroat ? [{x:throatX, dot:metric.read(base.throat), color:colors[1]}] : [],
         focus: sampleReadout ? [getX(focus, base), metric.read(focus)] : null,
       });
     });
@@ -461,7 +471,7 @@ function processView() {
       <p class="panel-note">Brent 迭代 ${chamber.brent_iterations} 次 · 末态平衡迭代 ${chamber.equilibrium_iterations} 次 · 凝相调整 ${chamber.phase_iterations} 轮 · 末次焓残差 ${m('Δh')} = ${quantity(last?.residual,'J/kg')}</p>
     </section>
     <section class="panel">${header('燃烧室温度求根','逐次记录试算温度与相对目标焓的偏差。')}
-      <div class="legend">${phases.map(([key,label],i) => `<span><i class="${i===0?'blue':i===2?'amber':''}"></i>${label}</span>`).join('')}</div>
+      <div class="legend">${phases.map(([key,label]) => `<span><i class="series-${stageColor[key]}"></i>${label}</span>`).join('')}</div>
       <div class="chart-grid">${chart('trace-temp','试算温度','wide-chart',{symbol:'T',unit:'K'})}${chart('trace-residual','绝对焓残差（对数刻度）','wide-chart',{symbol:'|Δh|',unit:'J/kg'})}</div>
       <p class="panel-note">残差图设 ${quantity(1e-10,'J/kg')} 显示下限。原始带符号值见表和 CSV。Brent 法要求残差与温度区间宽度同时达标才停止，所以残差先降到很小、随后在收窄区间时回升是正常现象；最终复算点（橙色）才是采用的解。</p>
       <details class="advanced"><summary>查看逐次试算表</summary>${fields(['序号','阶段',`温度 ${symbolUnit('T','K')}`,`焓残差 ${symbolUnit('Δh','J/kg')}`], traces.map(row=>[row.evaluation,stageLabels[row.stage] ?? '未知',precise(row.temperature,6),precise(row.residual,6)]))}</details>
@@ -470,7 +480,7 @@ function processView() {
   </div>`;
   bindDownload('#trace-export', () => csv('燃烧室求根.csv',['evaluation','stage','temperature_K','enthalpy_residual_J_kg'], traces.map(t=>[t.evaluation,t.stage,t.temperature,t.residual])));
   const traceSeries = f => [
-    {color:'#607c89', width:1, points:traces.map(row=>[row.evaluation,f(row)])},
+    {color:theme().grid, width:1, points:traces.map(row=>[row.evaluation,f(row)])},
     ...phases.map(([stage])=>({ color:modelColors[stage], dots:true, points:traces.filter(row=>row.stage===stage).map(row=>[row.evaluation,f(row)]) })),
   ];
   const x = '温度试算序号';
@@ -479,7 +489,7 @@ function processView() {
     linearChart($('#trace-residual'), {
       series:traceSeries(row=>Math.log10(Math.max(1e-10,Math.abs(row.residual)))),
       xLabel:x, yFormat:tick=>mathText(`10^{${fmt(tick,1)}}`,true),
-      refs:[{y:-2,color:colors[2]}],
+      refs:[{y:-2,color:theme().text}],
     });
   });
 }
@@ -754,7 +764,7 @@ function validationView() {
   const refNames = {temperature:['燃烧室温度','K'],cstar:['特征速度','m/s'],isp:['给定环境比冲','s'],ispVac:['真空比冲','s'],exitPressure:['出口压强','kPa']};
   const referenceSection = reference ? `<section class="panel">
     ${header('⑤ 独立代码复核', `同一工况用 ${esc(reference.tool)} 独立求解（${reference.model === 'eq' ? '平衡流' : '冻结流'}），与 C 求解器对比。`)}
-    ${fields(['指标','单位','Cantera','C 求解器','偏差'], reference.rows.map(row => [esc(refNames[row.id][0]), unit(refNames[row.id][1]), sig(row.reference,6), sig(row.computed,6), ng(row.deltaPercent)]))}
+    ${fields(['指标','单位','Cantera','C 求解器','偏差'], reference.rows.map(row => [esc(refNames[row.id][0]), unitCell(refNames[row.id][1]), sig(row.reference,6), sig(row.computed,6), ng(row.deltaPercent)]))}
     <p class="panel-note">两套代码使用同源 NASA 热力数据，但平衡算法和喷管推进独立实现。偏差在 0.1% 量级，说明理想解可信，与公开值的差距来自损失和口径，而非求解错误。</p>
   </section>` : '';
 
@@ -909,6 +919,21 @@ for (const radio of form.querySelectorAll('[name="kind"]')) radio.addEventListen
   }
   markStale();
 });
+
+const themeKey = 'rocket-workbench-theme';
+function applyTheme(name, persist = false) {
+  document.documentElement.dataset.theme = name;
+  $('#theme-toggle')?.setAttribute('aria-label', name === 'dark' ? '切换到浅色主题' : '切换到深色主题');
+  if (persist) { try { localStorage.setItem(themeKey, name); } catch { /* session only */ } }
+  state.redraw?.();
+}
+(() => {
+  let saved = null;
+  try { saved = localStorage.getItem(themeKey); } catch { /* ignore */ }
+  const system = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  applyTheme(saved === 'light' || saved === 'dark' ? saved : system);
+})();
+on('#theme-toggle', 'click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true));
 
 async function init() {
   $('#run').disabled = $('#run-range').disabled = true;

@@ -1,10 +1,35 @@
 import { mathFont, mathText, numericSource, unitSource } from './math.mjs';
 
-const plotBackground = '#0d1b23';
-const grid = '#2a414d';
-const text = '#a9c0c7';
-const font = '"Segoe UI","Microsoft YaHei UI",sans-serif';
-export const colors = ['#7ce4c5', '#86b5ff', '#ffc080', '#d39afa', '#ff9292', '#b8d077'];
+// Chart colours come from CSS custom properties so the light and dark
+// themes share one drawing path. Outside a browser (npm test) the dark
+// values below are used.
+const fallback = {
+  bg: '#0f1218', grid: 'rgba(255,255,255,0.07)', text: '#8c96a8', strong: '#e9edf3', focus: '#e9edf3',
+  mesh: 'rgba(8,10,14,0.55)', ring: 'rgba(255,255,255,0.18)',
+  series: ['#6ca8ff', '#f0883e', '#3cc8b4', '#a98bff', '#f27a9b', '#a8c96b'],
+  axes: ['#6ca8ff', '#f0b45e', '#a98bff'],
+};
+export function theme() {
+  if (typeof document === 'undefined' || typeof getComputedStyle === 'undefined') return fallback;
+  const css = getComputedStyle(document.documentElement);
+  const read = (name, value) => css.getPropertyValue(name).trim() || value;
+  return {
+    bg: read('--chart-bg', fallback.bg), grid: read('--chart-grid', fallback.grid),
+    text: read('--chart-text', fallback.text), strong: read('--chart-strong', fallback.strong),
+    focus: read('--chart-focus', fallback.focus), mesh: read('--chart-mesh', fallback.mesh),
+    ring: read('--chart-ring', fallback.ring),
+    series: fallback.series.map((value, i) => read(`--series-${i + 1}`, value)),
+    axes: ['x', 'y', 'z'].map((axis, i) => read(`--axis-${axis}`, fallback.axes[i])),
+  };
+}
+// Live view of the current series palette (index access and length).
+export const colors = new Proxy([], {
+  get(_, key) {
+    const series = theme().series;
+    return key === 'length' ? series.length : series[key];
+  },
+});
+const font = '"Inter","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei UI","Noto Sans SC",system-ui,sans-serif';
 
 export function format(value, digits = 2) {
   if (!Number.isFinite(value)) return '—';
@@ -21,15 +46,16 @@ function frame(canvas) {
   if (canvas.height !== height) canvas.height = height;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(width / rect.width, 0, 0, height / rect.height, 0, 0);
-  ctx.fillStyle = plotBackground;
+  const t = theme();
+  ctx.fillStyle = t.bg;
   ctx.fillRect(0, 0, rect.width, rect.height);
-  return { ctx, w: rect.width, h: rect.height };
+  return { ctx, w: rect.width, h: rect.height, t };
 }
 
-export function caption(ctx, value, x, y, align = 'left', fill = text, size = 12) {
+export function caption(ctx, value, x, y, align = 'left', fill = theme().text, size = 12) {
   const runs = (Array.isArray(value) ? value.flat(Infinity) : [value])
     .map(run => typeof run === 'string' ? { text: run } : run);
-  const fontFor = run => `${run.italic ? 'italic ' : ''}${run.level ? size * .74 : size}px ${run.math ? mathFont : font}`;
+  const fontFor = run => `${run.italic ? 'italic ' : ''}${run.level ? size * .74 : size}px ${run.math && run.italic ? mathFont : font}`;
   const widths = runs.map(run => {
     ctx.font = fontFor(run);
     return ctx.measureText(run.text).width;
@@ -89,7 +115,8 @@ function linearTicks([min, max], target) {
 export function linearChart(canvas, opts) {
   const layout = frame(canvas);
   if (!layout) return null;
-  const { ctx, w, h } = layout;
+  const { ctx, w, h, t } = layout;
+  const grid = t.grid;
   const valid = opts.series.flatMap(line => line.points.filter(point => point.every(Number.isFinite)));
   if (!valid.length) {
     caption(ctx, '当前工况无可绘制数据', w / 2, h / 2, 'center');
@@ -145,8 +172,8 @@ export function linearChart(canvas, opts) {
   if (opts.focus?.every(Number.isFinite)) {
     const x = px(opts.focus[0]);
     const y = py(opts.focus[1]);
-    segment(ctx, x, top, x, bottom, '#d8f5ec', 1, [2, 3]);
-    dot(ctx, x, y, 3.5, '#ecfff7');
+    segment(ctx, x, top, x, bottom, t.focus, 1, [2, 3]);
+    dot(ctx, x, y, 3.5, t.focus);
   }
   for (const mark of opts.refs ?? []) {
     if (Number.isFinite(mark.x) && Number.isFinite(mark.dot)) dot(ctx, px(mark.x), py(mark.dot), 3.25, mark.color);
@@ -158,8 +185,8 @@ export function linearChart(canvas, opts) {
   };
 }
 
-const ramp = [[37,52,100], [41,107,157], [39,166,166], [140,211,134], [255,212,117]];
-const divergingRamp = [[70,120,220], [120,170,225], [214,222,226], [240,160,110], [214,90,70]];
+const ramp = [[40,30,92], [101,42,130], [178,58,110], [236,110,72], [252,206,118]];
+const divergingRamp = [[52,110,214], [124,165,230], [206,212,222], [240,150,98], [210,76,52]];
 // Colour scale: log for quantities spanning decades (p, ρ), symmetric
 // diverging for differences against a baseline.
 export function colorScaleOf(metric, domain, diverging = false) {
@@ -196,7 +223,8 @@ export function heatmap(canvas, rows, metric, domain, focus, opts = {}) {
   const read = opts.read ?? metric.read;
   const layout = frame(canvas);
   if (!layout || !rows.length) return null;
-  const { ctx, w, h } = layout;
+  const { ctx, w, h, t } = layout;
+  const grid = t.grid, text = t.text;
   const left = Math.min(147, w * .31), right = w - 21, top = 16, bottom = h - 68;
   const rowHeight = (bottom - top) / rows.length;
   rows.forEach((row, j) => {
@@ -213,7 +241,7 @@ export function heatmap(canvas, rows, metric, domain, focus, opts = {}) {
       ctx.fillStyle = Number.isFinite(value) ? heatColor(value, scale) : grid;
       ctx.fillRect(x0, y, x1 - x0 + 0.5, rowHeight - 2);
       if (focus?.row === j && focus.index === i) {
-        ctx.strokeStyle = '#ffffff';
+        ctx.strokeStyle = t.focus;
         ctx.lineWidth = 1.5;
         ctx.strokeRect(x0, y + 1, Math.max(1, x1 - x0), rowHeight - 4);
       }
@@ -221,7 +249,7 @@ export function heatmap(canvas, rows, metric, domain, focus, opts = {}) {
   });
   for (const value of progressTicks) {
     const x = left + value * (right - left);
-    segment(ctx, x, bottom, x, bottom + 5, '#8199a2');
+    segment(ctx, x, bottom, x, bottom + 5, t.text);
     caption(ctx, num(value), x, bottom + 16, 'center');
   }
   caption(ctx, ['归一化膨胀进度 ', axisLabel('ξ', '1')], (left + right) / 2, h - 33, 'center');
@@ -256,7 +284,8 @@ export function nozzleGeometry({ throat, exit, profile, performance }) {
 export function nozzleMap(canvas, geometry, metric, focused) {
   const layout = frame(canvas);
   if (!layout) return null;
-  const { ctx, w, h } = layout;
+  const { ctx, w, h, t } = layout;
+  const grid = t.grid, text = t.text;
   if (!geometry) {
     caption(ctx,'当前算例缺少喉后有效面积比分布',w/2,h/2,'center');
     return null;
@@ -283,13 +312,13 @@ export function nozzleMap(canvas, geometry, metric, focused) {
     ctx.fillStyle = Number.isFinite(p.v) ? heatColor(p.v,scale) : grid;
     ctx.fillRect(left,0,right-left+0.5,mid*2);
   });
-  segment(ctx,x0,mid,x1,mid,'#e8f0f1',.8,[6,5]);
+  segment(ctx,x0,mid,x1,mid,t.ring,.8,[6,5]);
   if (nodes[focused]) {
     const node = nodes[focused];
-    segment(ctx,node.x,mid-node.y,node.x,mid+node.y,'#f5fff9',1.3,[3,3]);
+    segment(ctx,node.x,mid-node.y,node.x,mid+node.y,t.focus,1.3,[3,3]);
   }
   ctx.restore();
-  segment(ctx,x0,25,x0,mid*2-25,'#8199a2');
+  segment(ctx,x0,25,x0,mid*2-25,t.text);
   caption(ctx,mathText('r/r_{t}'),x0-8,9,'right',text,11);
   for (const tick of [-1,0,1]) {
     const py = mid-tick*(mid-25);
@@ -348,13 +377,13 @@ function polygon(ctx, points, fill, stroke, width = .55) {
   ctx.stroke();
 }
 
-const axesColors = ['#9ed5f5', '#e8c184', '#c8b9f0'];
 const surfaceName = metric => [metric.label, ' ', axisLabel(metric.symbol, metric.unit)];
 
 export function nozzleSurface(canvas, geometry, metric, camera, focused) {
   const layout = frame(canvas);
   if (!layout || !geometry) return;
-  const { ctx, w, h } = layout;
+  const { ctx, w, h, t } = layout;
+  const grid = t.grid, axesColors = t.axes;
   const { points, throatRadius, throatPressure, exitPressure } = geometry;
   const maximumRatio = Math.max(...points.map(point => point.radiusRatio));
   const limit = .65;
@@ -390,7 +419,7 @@ export function nozzleSurface(canvas, geometry, metric, camera, focused) {
   }
   for (const face of faces.sort((a,b)=>a.depth-b.depth)) {
     polygon(ctx, face.corners, Number.isFinite(face.value) ? heatColor(face.value,scale) : grid,
-      face.selected ? '#c5f0eb85' : face.band % 4 === 0 ? '#0d2939aa' : '#1b3f4b60');
+      face.selected ? t.focus : face.band % 4 === 0 ? t.mesh : t.grid);
   }
 
   const between = (a,b,color,width=1) => segment(ctx,a[0],a[1],b[0],b[1],color,width);
@@ -429,7 +458,8 @@ export function nozzleSurface(canvas, geometry, metric, camera, focused) {
 export function surface(canvas, rows, metric, domain, camera) {
   const layout = frame(canvas);
   if (!layout || rows.length < 2) return;
-  const { ctx, w, h } = layout;
+  const { ctx, w, h, t } = layout;
+  const grid = t.grid, axesColors = t.axes;
   const [low, high] = domain;
   const scale = colorScaleOf(metric, domain);
   const heatMin = rows[0].heat;
@@ -459,18 +489,18 @@ export function surface(canvas, rows, metric, domain, camera) {
   }
   polygons.sort((a,b) => a.reduce((sum,p)=>sum+p.point[2],0) - b.reduce((sum,p)=>sum+p.point[2],0));
   for (const quad of polygons) {
-    polygon(ctx,quad.map(p=>p.point),heatColor(quad.reduce((sum,p)=>sum+p.value,0)/4,scale),'#16313d');
+    polygon(ctx,quad.map(p=>p.point),heatColor(quad.reduce((sum,p)=>sum+p.value,0)/4,scale),t.mesh);
   }
   for (const row of coordinates) {
     for (let i = 1; i < row.length; i++) {
       if (Number.isFinite(row[i-1].value) && Number.isFinite(row[i].value)) {
-        between(row[i-1].point, row[i].point, '#e0f1ea', .9);
+        between(row[i-1].point, row[i].point, t.strong, .9);
       }
     }
     if (row.length) {
       for (let i = 0; i < row.length; i += Math.max(1, Math.floor(row.length / 10))) {
         const { point, value } = row[i];
-        if (Number.isFinite(value)) dot(ctx, point[0], point[1], 1.8, '#eef9f1');
+        if (Number.isFinite(value)) dot(ctx, point[0], point[1], 1.8, t.strong);
       }
     }
   }
