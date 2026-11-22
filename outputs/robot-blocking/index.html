@@ -174,10 +174,13 @@ const G = {
   shoulder: ellipsoid(.62, .62, .62), upper: cyl(.42, .42, -1.7, -.55), elbow: ellipsoid(.45, .45, .45),
   fore: cyl(.42, .42, -1.37, -.32), wrist: cyl(.5, .5, -1.62, -1.37), pin: cyl(.12, .12, -.2, .2),
   fingerA: box(.14, .75, .28), fingerB: box(.14, .6, .28),
+  // 洒水壶（按机器人比例：壶身比机器人的头小）
+  canBody: cyl(.85, .8, -1.7, 0), canTop: torus(.8, .08), canHandle: torus(.55, .09), canSpout: cyl(.2, .1, 0, 2.3), canRose: cyl(.12, .26, 0, .25),
+  water: cyl(.07, .07, 0, 1),
 };
 const COL = {
   sill: [.86,.86,.83], wall: [.80,.80,.78], frame: [.90,.90,.88],
-  pot: [.74,.43,.29], soil: [.24,.15,.10], leaf: [.32,.62,.27], petal: [.98,.82,.18], fcenter: [.95,.52,.12],
+  pot: [.74,.43,.29], can: [.58,.70,.60], water: [.75,.85,.95], soil: [.24,.15,.10], leaf: [.32,.62,.27], petal: [.98,.82,.18], fcenter: [.95,.52,.12],
   green: [.50,.65,.47], greenDk: [.40,.53,.38], metal: [.66,.66,.64], amber: [.96,.62,.12], brass: [.76,.61,.27], copper: [.72,.42,.26],
 };
 const LIGHTS = {
@@ -191,10 +194,11 @@ for (const l of Object.values(LIGHTS)) { const n = Math.hypot(...l.L); l.L = l.L
 const POT = [4.3, 0, 0];
 
 /* ---------- 状态与预设 ---------- */
-const BASE = {rx: -4.3, rz: 0, yaw: 60, hyaw: 0, hpitch: 0, lf: 0, lo: 4, lb: 0, rf: 0, ro: 4, rb: 0, plant: 0, light: 'rain',
+const BASE = {rx: -4.3, rz: 0, yaw: 60, hyaw: 0, hpitch: 0, lf: 0, lo: 4, lb: 0, rf: 0, ro: 4, rb: 0, plant: 0, can: 0, light: 'rain',
               cyaw: 0, cpitch: 3, cdist: 51, tx: 0, ty: 7.7, focal: 50};
 const PRESETS = {
   S1: {},
+  S2: {can: 2, cyaw: 8, cpitch: 20, cdist: 20, tx: 3.6, ty: 9.6, focal: 85},
   S3: {light: 'night', hpitch: -22, hyaw: 12},
   S4: {light: 'morning', plant: 1, rx: -3.0, yaw: 75, hpitch: -30, cyaw: 62, cpitch: 26, cdist: 22, tx: 2.2, ty: 8.8, focal: 70},
   S5: {light: 'sun', plant: 2, rx: -4.0, yaw: 45, hyaw: 10, hpitch: 25, cyaw: -8, cpitch: -2, cdist: 40, tx: -0.8, ty: 9, focal: 50},
@@ -255,20 +259,36 @@ function build() {
   }
   add(G.antCollar, H, COL.metal); add(G.antRod, H, COL.metal); add(G.antBall, C(H, M.T(0, 7.07, 0)), COL.copper);
   // 手臂：s=+1 是机器人自己的左手（面对镜头时在画面右边）
+  let grip = null;
   for (const [s, f, o, b] of [[1, st.lf, st.lo, st.lb], [-1, st.rf, st.ro, st.rb]]) {
     const A = C(Rt, M.T(3.2*s, 6.45, 0), M.RZ(s*o), M.RX(-f));
     add(G.shoulder, A, COL.metal); add(G.upper, A, COL.green);
     const E = C(A, M.T(0, -2.03, 0), M.RX(-b));
     add(G.elbow, E, COL.metal); add(G.fore, E, COL.green); add(G.wrist, E, COL.metal);
     add(G.pin, C(E, M.T(0, -1.85, 0), M.RX(90)), COL.metal);
+    if (s === -1) grip = M.apply(E, [0, -2.35, 0]);
     for (const k of [1, -1]) {
       const Fg = C(E, M.T(0, -1.85, 0), M.RZ(k*22));
       add(G.fingerA, C(Fg, M.T(0, -.375, 0)), COL.metal);
       add(G.fingerB, C(Fg, M.T(0, -.75, 0), M.RZ(-k*35), M.T(0, -.3, 0)), COL.metal);
     }
   }
-  // 地面阴影、玻璃（半透明，最后画）
+  // 洒水壶：挂在机器人右手（离镜头近的那只）的夹子上，壶嘴朝花盆方向倾斜
   const T = [];
+  if ((st.can === 1 && grip) || st.can === 2) {
+    // 1：挂在右手夹子上；2：单独特写，壶从左上方伸进来，壶嘴对准泥土中心，画面里不出现机器人
+    const K = st.can === 1
+      ? C(M.T(...grip), M.RY(Math.atan2(POT[0] - grip[0], POT[2] - grip[2]) / R - 90), M.RZ(-32))
+      : C(M.T(POT[0] - 3.3, 12.6, POT[2] + .4), M.RZ(-32));
+    add(G.canHandle, C(K, M.T(0, -.55, 0), M.RX(90)), COL.can);
+    const Bd = C(K, M.T(1.15, -.45, 0));
+    add(G.canBody, Bd, COL.can); add(G.canTop, Bd, COL.metal);
+    const Sp = C(Bd, M.T(.7, -1.4, 0), M.RZ(-58));
+    add(G.canSpout, Sp, COL.can); add(G.canRose, C(Sp, M.T(0, 2.3, 0)), COL.metal);
+    const tip = M.apply(Sp, [0, 2.5, 0]), soil = 7.15;
+    if (tip[1] > soil) T.push({m: G.water, mat: C(M.T(tip[0], soil, tip[2]), [1,0,0,0, 0,tip[1]-soil,0,0, 0,0,1,0, 0,0,0,1]), c: COL.water, e: .3, a: .55});
+  }
+  // 地面阴影、玻璃（半透明，最后画）
   T.push({m: G.shPot, mat: C(P, M.T(.6, .01, .4)), c: [0,0,0], e: 0, a: .22});
   for (const s of [-1, 1]) T.push({m: G.shFoot, mat: C(Rt, M.T(1.55*s + .3, .01, .3)), c: [0,0,0], e: 0, a: .25});
   T.push({m: G.glass, mat: M.T(19, 40, -6.5), c: lt.glass, e: .25, a: lt.ga});
@@ -318,7 +338,8 @@ for (const k of Object.keys(PRESETS)) {
 }
 panel.insertAdjacentHTML('beforeend', `<h3>场景</h3>
   <div class="row"><label>灯光</label><select id="light">${Object.entries(LIGHTS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}</select><span></span></div>
-  <div class="row"><label>植物</label><select id="plant"><option value="0">无</option><option value="1">嫩芽</option><option value="2">开花</option></select><span></span></div>`);
+  <div class="row"><label>植物</label><select id="plant"><option value="0">无</option><option value="1">嫩芽</option><option value="2">开花</option></select><span></span></div>
+  <div class="row"><label>洒水壶</label><select id="can"><option value="0">无</option><option value="1">右手拿着</option><option value="2">单独特写</option></select><span></span></div>`);
 for (const it of SL) {
   if (it.length === 1) { panel.insertAdjacentHTML('beforeend', `<h3>${it[0]}</h3>`); continue; }
   const [k, label, mn, mx, step] = it, row = document.createElement('div'); row.className = 'row';
@@ -331,12 +352,13 @@ panel.insertAdjacentHTML('beforeend', `<h3>参数（可以复制给 Claude，或
   <textarea id="params"></textarea><div class="btns"><button id="showP">显示当前参数</button><button id="copyP">复制</button><button id="loadP">按文本框恢复</button></div><div class="tip" id="pmsg"></div>`);
 $('#light').onchange = e => { st.light = e.target.value; markCustom(); redraw(); };
 $('#plant').onchange = e => { st.plant = +e.target.value; markCustom(); redraw(); };
+$('#can').onchange = e => { st.can = +e.target.value; markCustom(); redraw(); };
 $('#showP').onclick = () => { $('#params').value = JSON.stringify(Object.fromEntries(Object.entries(st).map(([k, v]) => [k, typeof v === 'number' ? +v.toFixed(2) : v]))); };
 $('#loadP').onclick = () => { try { st = {...BASE, ...JSON.parse($('#params').value)}; cur = null; sync(); redraw(); $('#pmsg').textContent = '已恢复'; } catch (e) { $('#pmsg').textContent = '参数格式不对'; } };
 $('#copyP').onclick = async () => { $('#showP').onclick(); try { await navigator.clipboard.writeText($('#params').value); $('#pmsg').textContent = '已复制'; } catch (e) { $('#pmsg').textContent = '无法自动复制，请手动全选文本框复制'; } };
 function sync() {
   for (const [k, [inp, out]] of Object.entries(inputs)) { inp.value = st[k]; out.textContent = +(+st[k]).toFixed(1); }
-  $('#light').value = st.light; $('#plant').value = st.plant;
+  $('#light').value = st.light; $('#plant').value = st.plant; $('#can').value = st.can;
   document.querySelectorAll('#presets button').forEach(b => b.classList.toggle('on', b.textContent === cur));
 }
 function markCustom() { if (cur) { cur = null; sync(); } }
