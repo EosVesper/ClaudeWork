@@ -1053,7 +1053,7 @@
     "status": "pass"
    }
   ],
-  "seconds": 7.343752643,
+  "seconds": 7.598843250999998,
   "command": [
    "rocket_thermo.exe",
    "LOX",
@@ -1175,5 +1175,5 @@
   "source": "天鹊系列同属燃气发生器循环（招股书 1-1-210 页）",
   "url": "https://static.sse.com.cn/stock/disclosure/announcement/c/202512/002174_20251231_1QK0.pdf#page=211"
  },
- "createdAt": "2026-11-21T18:31:12.472Z"
+ "createdAt": "2026-11-22T06:31:16.498Z"
 }

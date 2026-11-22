@@ -1079,7 +1079,7 @@
     "status": "pass"
    }
   ],
-  "seconds": 7.635091459999996,
+  "seconds": 7.918715023999997,
   "command": [
    "rocket_thermo.exe",
    "LOX",
@@ -2166,7 +2166,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 7.635091459999996,
+   "seconds": 7.918715023999997,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -3312,7 +3312,7 @@
      "status": "pass"
     }
    ],
-   "seconds": 7.226391639999995,
+   "seconds": 7.445985834999999,
    "command": [
     "rocket_thermo.exe",
     "LOX",
@@ -3538,5 +3538,5 @@
   "source": "招股书 1-1-210 页 YF-100 列",
   "url": "https://static.sse.com.cn/stock/disclosure/announcement/c/202512/002174_20251231_1QK0.pdf#page=211"
  },
- "createdAt": "2026-11-21T18:31:49.385Z"
+ "createdAt": "2026-11-22T06:31:55.149Z"
 }

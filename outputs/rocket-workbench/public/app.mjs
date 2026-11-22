@@ -40,13 +40,13 @@ const state = {
 
 function loadLosses() {
   try {
-    const saved = JSON.parse(localStorage.getItem('rocket-workbench-losses-v1') ?? 'null');
+    const saved = JSON.parse(localStorage.getItem('rocket-workbench-losses-v2') ?? 'null');
     if (validLosses(saved)) return saved;
   } catch { /* fall back to defaults */ }
   return defaultLosses();
 }
 function saveLosses() {
-  try { localStorage.setItem('rocket-workbench-losses-v1', JSON.stringify(state.losses)); } catch { /* memory only */ }
+  try { localStorage.setItem('rocket-workbench-losses-v2', JSON.stringify(state.losses)); } catch { /* memory only */ }
 }
 // Significant-figure display for tables (raw values stay in JSON/CSV).
 function sig(value, digits = 5) {
@@ -257,7 +257,7 @@ function png(id, name) {
 function saveJson() {
   const env = envelope(state.record, state.losses, { engineLevel: state.engineLevel });
   const record = { ...state.record, losses: state.losses, engineLevel: state.engineLevel,
-    envelope: env, publicJudgement: judgePublic(state.record, env) };
+    envelope: env, publicJudgement: judgePublic(state.record, env, state.losses) };
   download(`${caseName(state.record.input)}-热力结果.json`, JSON.stringify(record, null, 2), 'application/json');
 }
 function saveProfile(cases = [state.record.main]) {
@@ -681,7 +681,7 @@ function lossTable(record) {
     const cell = key => `<input class="loss-input" type="number" step="${f.step}" data-loss="${f.id}" data-key="${key}" value="${cur[key]}" aria-label="${esc(f.label)} ${key}">`;
     const lam = f.id === 'angle' ? `<br><span class="stat-detail">${m('λ',false)} ${sig(divergence(cur.max),4)} / ${sig(divergence(cur.nom),4)} / ${sig(divergence(cur.min),4)}</span>` : '';
     return [`${esc(f.label)} ${m(f.symbol)}`, cell('min'), cell('nom'), cell('max') + lam,
-      `${esc(f.note)}<br>${link(f.url, f.source)}`];
+      `${esc(f.note)}<br>${f.url ? link(f.url, f.source) : esc(f.source)}`];
   });
   return fields(['损失因子','下限','名义','上限','依据'], rows);
 }
@@ -690,7 +690,7 @@ function validationView() {
   const {main, input, public: refs, cases, failed, bounds, analytical, implied, reference, cycle} = state.record;
   const liquid = input.kind === 'liquid';
   const env = envelope(state.record, state.losses, { engineLevel: state.engineLevel });
-  const judged = judgePublic(state.record, env);
+  const judged = judgePublic(state.record, env, state.losses);
   const caseTags = item => `${esc(item.modelLabel)}${item.heat ? ` · ${m('Q')} ${precise(item.heat,3)}` : ''}`;
   const caseText = id => { const item = cases.find(c => c.id === id); return item ? caseTags(item) : '—'; };
 

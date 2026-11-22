@@ -89,15 +89,18 @@ test('delivered envelope is ordered and engine level applies only to gas-generat
     assert.ok(env.frozenIncluded);
     if (env.engine) assert.ok(env.engine.nominal.isp < env.chamber.nominal.isp);
   }
-  const verdict = id => Object.fromEntries(judgePublic(records[id], envelope(records[id], losses)).map(row => [row.metric, row]));
-  // Public Isp values fall inside the delivered envelope with default factors.
+  const verdict = id => Object.fromEntries(judgePublic(records[id], envelope(records[id], losses), losses).map(row => [row.metric, row]));
+  // With the report-1 branch fraction (β = 0.09) the TQ-12B public Isp sits within ~1 % of nominal.
   assert.equal(verdict('TQ-12B').isp.inside, true);
-  assert.equal(verdict('TQ-15B').ispVac.inside, true);
+  assert.ok(Math.abs(verdict('TQ-12B').isp.deltaNominal) < 2);
   assert.equal(verdict('YF-100K').isp.inside, true);
-  // TQ-15B public thrust needs ~9 % more flow than the preset main-chamber flow.
-  assert.equal(verdict('TQ-15B').thrustVac.inside, false);
-  assert.match(verdict('TQ-15B').thrustVac.note, /隐含总流量/u);
-  // YF-100K preset flow is the public thrust / Isp ratio: thrust is not independent.
+  // TQ-15B 3500 m/s exceeds the envelope for ε = 50 and β = 0.09; the note says why.
+  assert.equal(verdict('TQ-15B').ispVac.inside, false);
+  assert.ok(verdict('TQ-15B').ispVac.deltaNominal > 0);
+  assert.match(verdict('TQ-15B').ispVac.note, /面积比/u);
+  // Thrust comparisons are flagged as not independent of the Isp comparison.
+  assert.match(verdict('TQ-12B').thrust.note, /不算独立验证/u);
+  assert.match(verdict('TQ-15B').thrustVac.note, /不算独立验证/u);
   assert.match(verdict('YF-100K').thrust.note, /不算独立验证/u);
 });
 
