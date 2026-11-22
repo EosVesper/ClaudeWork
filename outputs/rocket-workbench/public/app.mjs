@@ -1,6 +1,7 @@
 import { caption, colors, extent, format, heatmap, linearChart, nozzleGeometry, nozzleMap, nozzleSurface, surface, theme } from './charts.mjs';
 import { mathHtml as m, mathText, numericSource, richHtml, unitSource } from './math.mjs';
 import { defaultLosses, divergence, envelope, envelopeMetrics, judgePublic, lossFactors, validLosses } from './losses.mjs';
+import { createPlume } from './plume.mjs';
 
 const $ = selector => document.querySelector(selector);
 const form = $('#case-form');
@@ -167,8 +168,71 @@ function caseName(input) {
   return input.preset || `${input.oxidizer} / ${input.fuel}`;
 }
 
+const plume = createPlume($('#hero-canvas'), { onLayout: placeCallouts });
+function placeCallouts(layout, model) {
+  const box = $('#hero-callouts');
+  if (!box || !state.record) return;
+  const { main } = state.record;
+  const { chamber, throat, exit } = main.result;
+  const items = [
+    { cls: 'above', x: layout.px(model.xMin + model.lChamber * .45), y: layout.py(model.rc) - 16,
+      title: '燃烧室', body: `${quantity(chamber.T_c_K,'K',0)} · ${quantity(chamber.p_c_Pa / 1e6,'MPa',1)}` },
+    { cls: 'below', x: layout.px(0), y: layout.py(-1) + 16,
+      title: '喉部', body: `${m('Ma')} ${precise(throat.Ma,2)} · ${quantity(throat.T_K,'K',0)}` },
+    { cls: 'exit', x: layout.px(model.xExit) + 16, y: layout.py(model.rExit) + 4,
+      title: '出口', body: `${m('Ma_{e}')} ${precise(exit.Ma,3)} · ${quantity(exit.T_K,'K',0)} · ${quantity(exit.u_m_s,'m/s',0)}` },
+  ];
+  box.innerHTML = items.map(item => `<div class="callout ${item.cls}"><b>${item.title}</b><span>${item.body}</span></div>`).join('');
+  [...box.children].forEach((node, i) => { node.style.left = `${items[i].x}px`; node.style.top = `${items[i].y}px`; });
+}
+
+function countUp(node, value, digits) {
+  if (!Number.isFinite(value)) { node.textContent = '—'; return; }
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const format = v => v.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  if (reduced) { node.textContent = format(value); return; }
+  const started = performance.now();
+  const tick = now => {
+    const t = Math.min(1, (now - started) / 1100);
+    node.textContent = format(value * (1 - (1 - t) ** 4));
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function renderHero() {
+  const { input, main } = state.record;
+  const preset = state.catalog.presets.find(item => item.id === input.preset);
+  const liquid = input.kind === 'liquid';
+  show('#hero-name', liquid ? (preset?.name ?? `${input.oxidizer} / ${input.fuel}`) : `固体配方 ${input.solid}`);
+  show('#hero-code', liquid ? (input.preset || '自定义') : 'SOLID');
+  const cycle = state.record.cycle?.label;
+  const exitText = input.exitMode === 'eps' ? `${m('ε')} ${precise(input.exitValue,4)}` : esc(exitLabels[input.exitMode][0]);
+  showFormula('#hero-sub', [
+    liquid ? `${esc(input.oxidizer)} / ${esc(input.fuel)}` : '固体推进剂',
+    cycle ? esc(cycle) : '', `${m('p_{c}')} ${quantity(input.pc / 1e6,'MPa',2)}`,
+    liquid ? `${m('O/F')} ${precise(input.of,3)}` : '', exitText, esc(main.modelLabel),
+  ].filter(Boolean).join('<span class="dot-sep"></span>'));
+  const env = envelope(state.record, state.losses, { engineLevel: state.engineLevel });
+  const level = env?.engine ?? env?.chamber;
+  const readouts = [
+    { key: 'isp', label: `理想比冲 ${m('I_{sp}')}`, unit: 's', digits: 1, value: main.summary.isp,
+      note: `真空 ${quantity(main.summary.ispVac,'s',1)}${level ? ` · 名义交付 ${quantity(level.nominal.isp,'s',1)}` : ''}`, hot: true },
+    { key: 'temperature', label: `燃烧室温度 ${m('T_{c}')}`, unit: 'K', digits: 0, value: main.summary.temperature, note: esc(main.modelLabel) },
+    { key: 'cstar', label: `特征速度 ${m('c^{∗}')}`, unit: 'm/s', digits: 0, value: main.summary.cstar, note: '主推力室' },
+    { key: 'thrust', label: `推力 ${m('F')}`, unit: 'kN', digits: 0, value: main.summary.thrust,
+      note: input.mdot ? `真空 ${quantity(main.summary.thrustVac,'kN',0)}` : '主推力室流量未提供' },
+  ];
+  $('#hero-readouts').innerHTML = readouts.map(r => `<div class="readout${r.hot ? ' hot' : ''}">
+      <dt>${r.label}</dt><dd><span class="readout-value" data-key="${r.key}">—</span><span class="readout-unit">${unit(r.unit)}</span></dd>
+      <p>${r.note}</p></div>`).join('');
+  readouts.forEach(r => countUp($(`.readout-value[data-key="${r.key}"]`), r.value, r.digits));
+  plume.setResult(main.result);
+}
+
 function showCurrent() {
   const { input, main, cases } = state.record;
+  renderHero();
   show('#case-title', caseName(input));
   const kind = cases.length ? `单工况 + ${cases.length} 个区间算例` : '单工况（未算区间）';
   showFormula('#case-detail', `${esc(main.modelLabel)} · ${quantity(input.pc / 1e6,'MPa')} · ${esc(kind)}`);
@@ -199,6 +263,7 @@ async function run(range, tab, initiated = true) {
   const input = readInput();
   state.busy = true;
   state.stale = false;
+  document.body.classList.add('busy');
   panel.setAttribute('aria-busy', 'true');
   $('#run').disabled = $('#run-range').disabled = true;
   status(range ? 'C 求解器正在复算平衡与冻结工况…' : 'C 求解器正在计算…', 'pending');
@@ -207,6 +272,7 @@ async function run(range, tab, initiated = true) {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({input, range}),
     });
     state.sample = 0;
+    state.revealCharts = true;
     state.heatFocus = {row: 0, index: 0};
     state.nozzleFocus = 0;
     state.scene = range && tab === 'field' ? 'cases' : 'nozzle';
@@ -219,6 +285,7 @@ async function run(range, tab, initiated = true) {
     if (!state.record) render();
   } finally {
     state.busy = false;
+    document.body.classList.remove('busy');
     panel.setAttribute('aria-busy', 'false');
     $('#run').disabled = $('#run-range').disabled = false;
   }
@@ -328,6 +395,7 @@ function profilePlots(cases, axis, sampleReadout = true) {
     : [0, .25, .5, .75, 1];
   const current = () => base.profile[Math.min(state.sample, base.profile.length - 1)];
   const layouts = [];
+  let reveal = 1;
   const redraw = () => {
     const focus = current();
     profileMetrics.slice(0, 4).forEach((metric, i) => {
@@ -341,10 +409,11 @@ function profilePlots(cases, axis, sampleReadout = true) {
         xFormat: x => axis === 'pressure' ? mathText(x === 0 ? '1' : `10^{${-Math.round(x / Math.LN10)}}`, true) : mathText(numericSource(x,3),true),
         xLabel: axis === 'pressure' ? ['压强比 ', mathText('p/p_{c}'),'（对数刻度）'] : ['归一化膨胀进度 ',mathText('ξ')],
         refs: includeThroat ? [{x:throatX, dot:metric.read(base.throat), color:colors[1]}] : [],
-        focus: sampleReadout ? [getX(focus, base), metric.read(focus)] : null,
+        focus: sampleReadout && reveal >= 1 ? [getX(focus, base), metric.read(focus)] : null,
+        reveal,
       });
     });
-    if (sampleReadout) {
+    if (sampleReadout && $('#sample-values')) {
       showFormula('#sample-values', `截面 ${focus.i} · ${m('p/p_{c}')} ${precise(focus.p_Pa / base.chamber.p_c_Pa,5)} · ${quantity(focus.T_K,'K',1)} · ${m('Ma')} ${precise(focus.Ma,3)} · ${quantity(focus.u_m_s,'m/s',1)}`);
     }
   };
@@ -368,6 +437,18 @@ function profilePlots(cases, axis, sampleReadout = true) {
     }; });
   }
   setRedraw(redraw);
+  if (state.revealCharts && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    state.revealCharts = false;
+    const started = performance.now();
+    const tick = now => {
+      if (!canvases[0]?.isConnected) return;   // view changed mid-animation
+      const t = Math.min(1, (now - started) / 900);
+      reveal = 1 - (1 - t) ** 3;
+      redraw();
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 }
 
 function stateTables({ chamber, throat, exit, performance, product_properties: props }) {
@@ -416,13 +497,7 @@ function overview() {
   const level = env?.engine ?? env?.chamber;
   const delivered = level ? ` · 名义交付 ${quantity(level.nominal.isp,'s',1)}${env.engine ? '（整机）' : ''}` : '';
   panel.innerHTML = `<div class="stack">
-    <div class="cards">
-      ${stat(`燃烧室温度 ${m('T_{c}')}`, main.summary.temperature, 'K', 1, '化学平衡出口')}
-      ${stat(`特征速度 ${m('c^{∗}')}`, main.summary.cstar, 'm/s', 1, '主推力室')}
-      ${stat(`理想给定环境比冲 ${m('I_{sp}')}`, main.summary.isp, 's', 2, `真空 ${quantity(main.summary.ispVac,'s',2)}${delivered}`)}
-      ${stat(`理想给定环境推力 ${m('F')}`, main.summary.thrust, 'kN', 2, input.mdot ? `真空 ${quantity(main.summary.thrustVac,'kN',2)} · 按主推力室流量` : '主推力室流量未提供，推力与尺寸缺失')}
-    </div>
-    <p class="panel-note">卡片为理想（${esc(main.modelLabel)}）热力解。计入燃烧、扩张、边界层${input.kind === 'liquid' ? '及整机支路' : ''}损失后的实际性能见「区间与验证」。</p>
+    <p class="panel-note lead">顶部主视觉与读数为理想（${esc(main.modelLabel)}）热力解。计入燃烧、扩张、边界层${input.kind === 'liquid' ? '及整机支路' : ''}损失后的实际性能见「区间与验证」。</p>
     <section class="panel">
       ${header('喷管膨胀剖面', `环境绝对压强 ${quantity(input.pa / 1000,'kPa')} · ${result.profile.length} 个实算采样点`,
         `<select id="axis-choice" aria-label="剖面横轴">${options([['pressure','压强比'],['progress','膨胀进度']], state.axis)}</select>
@@ -931,8 +1006,7 @@ function applyTheme(name, persist = false) {
 (() => {
   let saved = null;
   try { saved = localStorage.getItem(themeKey); } catch { /* ignore */ }
-  const system = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-  applyTheme(saved === 'light' || saved === 'dark' ? saved : system);
+  applyTheme(saved === 'light' || saved === 'dark' ? saved : 'dark');
 })();
 on('#theme-toggle', 'click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true));
 

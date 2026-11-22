@@ -141,7 +141,8 @@ export function linearChart(canvas, opts) {
 
   ctx.save();
   ctx.beginPath();
-  ctx.rect(left - 1, top - 1, right - left + 2, bottom - top + 2);
+  const reveal = Math.min(1, Math.max(0, opts.reveal ?? 1));
+  ctx.rect(left - 1, top - 1, (right - left) * reveal + 2, bottom - top + 2);
   ctx.clip();
   for (const mark of opts.refs ?? []) {
     if (Number.isFinite(mark.x)) segment(ctx, px(mark.x), top, px(mark.x), bottom, mark.color, 1, [3, 4]);

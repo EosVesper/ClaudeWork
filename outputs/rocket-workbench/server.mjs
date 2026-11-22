@@ -17,6 +17,8 @@ const assets = {
   '/fonts/stix-two-text.woff2': ['fonts/stix-two-text.woff2', 'font/woff2'],
   '/fonts/stix-two-text-italic.woff2': ['fonts/stix-two-text-italic.woff2', 'font/woff2'],
   '/fonts/stix-two-math-ops.woff2': ['fonts/stix-two-math-ops.woff2', 'font/woff2'],
+  '/fonts/space-grotesk.woff2': ['fonts/space-grotesk.woff2', 'font/woff2'],
+  '/plume.mjs': ['plume.mjs', 'text/javascript'],
 };
 let active = 0;
 

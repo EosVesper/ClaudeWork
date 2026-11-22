@@ -46,8 +46,8 @@ for (const item of plan) {
   console.log('ok');
 }
 
-const [html, css, icon, math, losses, charts, app] = await Promise.all(
-  ['index.html', 'style.css', 'icon.svg', 'math.mjs', 'losses.mjs', 'charts.mjs', 'app.mjs'].map(read));
+const [html, css, icon, math, losses, charts, plume, app] = await Promise.all(
+  ['index.html', 'style.css', 'icon.svg', 'math.mjs', 'losses.mjs', 'charts.mjs', 'plume.mjs', 'app.mjs'].map(read));
 const shim = `(function replay(catalog, snapshots) {
   function requestKey(input, range) {
     const common = ['kind','pc','pa','mdot','exitMode','exitValue','model','throat','points'];
@@ -66,18 +66,19 @@ const shim = `(function replay(catalog, snapshots) {
     return Response.json({ error: '离线回放未包含此资源。' }, { status: 404 });
   };
 })(${JSON.stringify(catalog)}, ${JSON.stringify(snapshots)});`;
-const parts = { math, losses, charts, app };
+const parts = { math, losses, charts, plume, app };
 const loader = `
     const parts = ${JSON.stringify(parts).replaceAll('</', '<\\/')};
     ${shim.replaceAll('</', '<\\/')}
     const url = source => URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
     const math = url(parts.math);
     const losses = url(parts.losses);
+    const plume = url(parts.plume);
     const charts = url(parts.charts.replaceAll('./math.mjs', math));
-    await import(url(parts.app.replaceAll('./math.mjs', math).replaceAll('./losses.mjs', losses).replaceAll('./charts.mjs', charts)));`;
+    await import(url(parts.app.replaceAll('./math.mjs', math).replaceAll('./losses.mjs', losses).replaceAll('./plume.mjs', plume).replaceAll('./charts.mjs', charts)));`;
 const iconUri = `data:image/svg+xml,${encodeURIComponent(icon)}`;
 // Inline the formula fonts so the single-file replay renders the same.
-const fontNames = ['stix-two-text.woff2', 'stix-two-text-italic.woff2', 'stix-two-math-ops.woff2'];
+const fontNames = ['stix-two-text.woff2', 'stix-two-text-italic.woff2', 'stix-two-math-ops.woff2', 'space-grotesk.woff2'];
 let pageCss = css;
 for (const name of fontNames) {
   const data = await readFile(new URL(`fonts/${name}`, root));

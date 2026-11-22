@@ -30,8 +30,20 @@
       </div>
     </div>
   </header>
+  <section class="hero" id="hero" aria-label="当前工况主视觉">
+    <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
+    <div class="hero-callouts" id="hero-callouts" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <p class="hero-eyebrow">推力室热力剖面 · 实算数据驱动</p>
+        <h1 class="hero-title"><span id="hero-name">火箭发动机热力计算</span><span class="hero-code" id="hero-code"></span></h1>
+        <p class="hero-sub" id="hero-sub">化学平衡 · 喷管膨胀 · 工况验证</p>
+      </div>
+      <dl class="hero-readouts" id="hero-readouts"></dl>
+    </div>
+    <p class="hero-note">粒子速度与颜色取自求解器的 <span class="math sym"><i>u</i>(<i>x</i>)</span>、<span class="math sym"><i>T</i>(<i>x</i>)</span>；扩张段按 15° 锥形当量长度换算，燃烧室与出口外羽流为示意。</p>
+  </section>
   <main class="shell">
-    <h1 class="sr-only">火箭发动机热力计算</h1>
     <div class="layout">
       <aside class="setup">
         <form id="case-form" class="form-panel">
