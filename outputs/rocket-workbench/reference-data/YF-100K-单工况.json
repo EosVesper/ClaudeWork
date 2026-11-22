@@ -1079,7 +1079,7 @@
     "status": "pass"
    }
   ],
-  "seconds": 7.992328893999998,
+  "seconds": 8.115653886,
   "command": [
    "rocket_thermo.exe",
    "LOX",
@@ -1200,5 +1200,5 @@
   "source": "招股书 1-1-210 页 YF-100 列",
   "url": "https://static.sse.com.cn/stock/disclosure/announcement/c/202512/002174_20251231_1QK0.pdf#page=211"
  },
- "createdAt": "2026-11-22T07:17:13.322Z"
+ "createdAt": "2026-11-22T07:48:08.160Z"
 }

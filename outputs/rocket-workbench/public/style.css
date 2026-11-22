@@ -265,14 +265,14 @@ td .stat-detail, th .stat-detail { display: inline; margin-top: 0; }
 .toolbar label { font-size: .76rem; color: var(--text-3); }
 .legend { display: flex; gap: 8px 18px; flex-wrap: wrap; margin: 2px 0 12px; font-size: .76rem; color: var(--text-2); }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
-.legend i { display: inline-block; width: 14px; height: 2px; border-radius: 2px; background: var(--series-1); }
-.legend i.dot { width: 7px; height: 7px; border-radius: 50%; }
-.legend i.series-0 { background: var(--series-1); }
-.legend i.series-1 { background: var(--series-2); }
-.legend i.series-2 { background: var(--series-3); }
-.legend i.series-3 { background: var(--series-4); }
-.legend i.series-4 { background: var(--series-5); }
-.legend i.series-5 { background: var(--series-6); }
+.legend > span > i:first-child { display: inline-block; width: 14px; height: 2px; border-radius: 2px; background: var(--series-1); }
+.legend > span > i.dot:first-child { width: 7px; height: 7px; border-radius: 50%; }
+.legend > span > i.series-0 { background: var(--series-1); }
+.legend > span > i.series-1 { background: var(--series-2); }
+.legend > span > i.series-2 { background: var(--series-3); }
+.legend > span > i.series-3 { background: var(--series-4); }
+.legend > span > i.series-4 { background: var(--series-5); }
+.legend > span > i.series-5 { background: var(--series-6); }
 .sample {
   display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 14px; padding: 10px 12px;
   border-radius: var(--radius); background: var(--surface-2); color: var(--text-2); font-size: .78rem; font-variant-numeric: tabular-nums;

@@ -697,6 +697,8 @@ function lossTable(record) {
 }
 
 function validationView() {
+  let sectionNo = 0;
+  const no = () => '①②③④⑤⑥⑦⑧⑨'[sectionNo++];
   const {main, input, public: refs, cases, failed, bounds, analytical, implied, reference, cycle} = state.record;
   const liquid = input.kind === 'liquid';
   const env = envelope(state.record, state.losses, { engineLevel: state.engineLevel });
@@ -714,7 +716,7 @@ function validationView() {
     ...(hasHeat ? [bound.probes.length ? bound.probes.map(probe => `<div>${caseText(probe.id)} · ${sig(probe.value,6)}</div>`).join('') : '—'] : []),
   ]);
   const idealSection = `<section class="panel">
-    ${header('① 理想热力区间', '同一推进剂、室压、混合比、面积比下，平衡流与组分冻结流两种膨胀模型给出的理想解边界。', `${btn('calculate-bounds', cases.length ? '重新计算区间' : '计算工况区间')}${cases.length ? btn('range-export','区间 CSV') : ''}`)}
+    ${header(`${no()} 理想热力区间`, '同一推进剂、室压、混合比、面积比下，平衡流与组分冻结流两种膨胀模型给出的理想解边界。', `${btn('calculate-bounds', cases.length ? '重新计算区间' : '计算工况区间')}${cases.length ? btn('range-export','区间 CSV') : ''}`)}
     ${failed.map(item=>`<p class="notice">${esc(item.model)} · ${m('Q')} ${quantity(item.heat,'kJ/kg')} 的计算失败：${esc(item.message)}</p>`).join('')}
     ${boundRows.length ? fields(['指标','下界与工况','上界与工况','下界相对上界',...(hasHeat ? ['中间热损失样点'] : [])], boundRows)
       : '<p class="notice">当前只算了单工况。运行「计算工况区间」以加入冻结流下限。</p>'}
@@ -730,17 +732,17 @@ function validationView() {
     ...(env.engine ? [fmtLevel(env.engine,id,5), range(env.engine,id,5)] : []),
   ]) : [];
   const lossSection = liquid ? `<section class="panel">
-    ${header('② 损失因子', `交付比冲按 ${m('I_{vac} = η_{c*} · λ · η_{BL} · I_{vac,ideal}')} 计算，给定环境比冲再扣除按交付 ${m('c^{∗}')} 换算的背压项。`, `${btn('reset-losses','恢复默认因子')}`)}
+    ${header(`${no()} 损失因子`, `交付比冲按 ${m('I_{vac} = η_{c*} · λ · η_{BL} · I_{vac,ideal}')} 计算，给定环境比冲再扣除按交付 ${m('c^{∗}')} 换算的背压项。`, `${btn('reset-losses','恢复默认因子')}`)}
     ${cycle ? `<p class="panel-note">${esc(input.preset)} 为${esc(cycle.label)}（${link(cycle.url, cycle.source)}）。</p>` : ''}
     ${cycle?.cycle === 'gg' ? `<label class="check"><input type="checkbox" id="engine-level" ${state.engineLevel ? 'checked' : ''}> 按整机口径计入燃气发生器排气（${m('δI/I ≈ (ṁ_{GG}/ṁ)(1 − c_{GG}/c)')}）；输入流量视为主推力室流量</label>` : ''}
     ${lossTable(state.record)}
     <p class="panel-note">修改后即时重算，无需重新调用求解器。默认值是有出处的工程范围或标明的课程假设，请用课程资料或试验数据覆盖。组合效率 ${m('η_{c*}λη_{BL}')}：${env ? `${sig(env.efficiency.low,4)} / ${sig(env.efficiency.nominal,4)} / ${sig(env.efficiency.high,4)}` : '因子无效'}。</p>
   </section>
   <section class="panel">
-    ${header('③ 实际性能包络', `名义值：平衡流 × 名义因子。包络下限：${env?.frozenIncluded ? '冻结流' : '平衡流（未算冻结流）'} × 各因子最不利值；上限：平衡流 × 各因子最有利值。`, btn('envelope-export','包络 CSV'))}
+    ${header(`${no()} 实际性能包络`, `名义值：平衡流 × 名义因子。包络下限：${env?.frozenIncluded ? '冻结流' : '平衡流（未算冻结流）'} × 各因子最不利值；上限：平衡流 × 各因子最有利值。`, btn('envelope-export','包络 CSV'))}
     ${env ? fields(['指标','理想（平衡流）','推力室名义','推力室包络',...(env.engine ? ['整机名义','整机包络'] : [])], envRows) : '<p class="notice">损失因子无效：须满足 下限 ≤ 名义 ≤ 上限。</p>'}
     ${env && !env.frozenIncluded ? '<p class="notice">尚未计算冻结流，包络下限偏乐观。运行「计算工况区间」后自动补全。</p>' : ''}
-  </section>` : `<section class="panel">${header('② 实际性能包络')}<p class="panel-note">固体算例暂不提供损失包络。</p></section>`;
+  </section>` : `<section class="panel">${header(`${no()} 实际性能包络`)}<p class="panel-note">固体算例暂不提供损失包络。</p></section>`;
 
   // ④ public values
   const publicRows = judged.map(ref => [
@@ -754,7 +756,7 @@ function validationView() {
   ]);
   const flowLine = implied ? `<p class="panel-note">流量诊断：公开推力 ÷ 公开比冲 = ${quantity(implied.total,'kg/s',4)}（${esc(implied.condition)}）。${implied.ratio ? `输入的主推力室流量为其 ${sig(100*implied.ratio,4)}%${Math.abs(implied.ratio-1) < .005 ? '，两者同源，推力对比不独立。' : `，相当于假设 ${sig(100*(1-implied.ratio),3)}% 的流量不经过主推力室。`}` : '主推力室流量未知。'}</p>` : '';
   const publicSection = `<section class="panel">
-    ${header('④ 公开值对照', `比较层级：${env?.engine ? '整机（含燃气发生器排气）' : '推力室'}。偏差 = 公开值 / 名义交付值 − ${m('1',true)}。所需综合效率 = 公开比冲 / 理想平衡流比冲。`)}
+    ${header(`${no()} 公开值对照`, `比较层级：${env?.engine ? '整机（含燃气发生器排气）' : '推力室'}。偏差 = 公开值 / 名义交付值 − ${m('1',true)}。所需综合效率 = 公开比冲 / 理想平衡流比冲。`)}
     ${judged.length ? fields(['指标','公开值','名义交付与包络','相对名义','包络判定','所需综合效率','口径、依据和出处'], publicRows) : '<p class="panel-note">此算例暂无已录入的同型号公开基准。</p>'}
     ${flowLine}
     <details class="advanced"><summary>查看资料及型号口径</summary><ul class="sources">${state.catalog.benchmarkContext.map(item=>`<li>${richHtml(item.description, esc)} ${link(item.url,item.label)}</li>`).join('')}</ul></details>
@@ -763,7 +765,7 @@ function validationView() {
   // ⑤ independent reference
   const refNames = {temperature:['燃烧室温度','K'],cstar:['特征速度','m/s'],isp:['给定环境比冲','s'],ispVac:['真空比冲','s'],exitPressure:['出口压强','kPa']};
   const referenceSection = reference ? `<section class="panel">
-    ${header('⑤ 独立代码复核', `同一工况用 ${esc(reference.tool)} 独立求解（${reference.model === 'eq' ? '平衡流' : '冻结流'}），与 C 求解器对比。`)}
+    ${header(`${no()} 独立代码复核`, `同一工况用 ${esc(reference.tool)} 独立求解（${reference.model === 'eq' ? '平衡流' : '冻结流'}），与 C 求解器对比。`)}
     ${fields(['指标','单位','Cantera','C 求解器','偏差'], reference.rows.map(row => [esc(refNames[row.id][0]), unitCell(refNames[row.id][1]), sig(row.reference,6), sig(row.computed,6), ng(row.deltaPercent)]))}
     <p class="panel-note">两套代码使用同源 NASA 热力数据，但平衡算法和喷管推进独立实现。偏差在 0.1% 量级，说明理想解可信，与公开值的差距来自损失和口径，而非求解错误。</p>
   </section>` : '';
@@ -772,16 +774,15 @@ function validationView() {
     const a = analytical[id], b = main.summary[id];
     return [`${label} ${m(resultSymbols[id])}`,unitCell(units),sig(a,5),sig(b,5),Number.isFinite(a) && a !== 0 && Number.isFinite(b) ? ng(100*(b/a-1)) : '—'];
   }) : [];
-  const n = reference ? '⑥' : '⑤';
   panel.innerHTML = `<div class="stack">
     ${idealSection}${lossSection}${publicSection}${referenceSection}
     <section class="panel">
-      ${header(`${n} 定比热理想气体对照`,`以同一室态、出口条件和环境压强独立解等熵关系，${m('γ')} 取室态值。`)}
+      ${header(`${no()} 定比热理想气体对照`,`以同一室态、出口条件和环境压强独立解等熵关系，${m('γ')} 取室态值。`)}
       ${idealRows.length ? fields(['指标','单位','解析参考','C 数值解','相对解析参考偏差'],idealRows)
         : '<p class="panel-note">当前条件缺少适用的声速堵塞解析参考。</p>'}
       <p class="panel-note">定比热模型忽略离解复合放热，因此数值解比冲高 2–3% 属预期趋势，不是误差。</p>
     </section>
-    <section class="panel">${header(`${reference ? '⑦' : '⑥'} 基准算例数值检查`, '按求解器容差及界面复算精度检查。', btn('validate-export','完整 JSON'))}${checkTable(main.checks)}</section>
+    <section class="panel">${header(`${no()} 基准算例数值检查`, '按求解器容差及界面复算精度检查。', btn('validate-export','完整 JSON'))}${checkTable(main.checks)}</section>
   </div>`;
   on('#calculate-bounds','click',()=>run(true,'validation'));
   on('#reset-losses','click',()=>{ state.losses = defaultLosses(); saveLosses(); validationView(); });
