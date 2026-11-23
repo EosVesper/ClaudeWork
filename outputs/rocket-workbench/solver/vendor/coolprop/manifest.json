@@ -1,0 +1,39 @@
+{
+  "library": "CoolProp",
+  "version": "8.0.0",
+  "commit": "ae81610e7d23efc57f9d051c8e70a4d66e87537f",
+  "source": "https://github.com/CoolProp/CoolProp/tree/v8.0.0",
+  "platform": "Windows x64",
+  "compiler": "MSYS2 UCRT64 GCC 16.2.0",
+  "build_date": "2026-11-08",
+  "build": "CMake Ninja, COOLPROP_SHARED_LIBRARY=ON, CMAKE_BUILD_TYPE=Release, MSYSTEM=UCRT64, PYTHONUTF8=1",
+  "runtime_source": "https://packages.msys2.org/package/mingw-w64-ucrt-x86_64-gcc-libs",
+  "runtime_licenses": "licenses/gcc/COPYING.RUNTIME and COPYING3; licenses/libgcc; licenses/libwinpthread",
+  "eos_fluids": [
+    "Oxygen",
+    "ParaHydrogen",
+    "Methane"
+  ],
+  "files": [
+    {
+      "name": "CoolProp.dll",
+      "bytes": 14445952,
+      "sha256": "46440aeaaa861c04a7d3988480fc7a5dbf77232590360a3e263b2e2df4c4431e"
+    },
+    {
+      "name": "libgcc_s_seh-1.dll",
+      "bytes": 150537,
+      "sha256": "68ca4574b331402879dec403ba4f14491c9b8fc4aa3f4a41432008714b9bc5df"
+    },
+    {
+      "name": "libstdc++-6.dll",
+      "bytes": 2659194,
+      "sha256": "b30dbd914d903992acb28b38455947153886656beafbd91c465c31aa258f9c45"
+    },
+    {
+      "name": "libwinpthread-1.dll",
+      "bytes": 64574,
+      "sha256": "76cc52adfcdb8c800813b2ae8da42a908934eb1ee54ce8e9744fc8d703c76ee1"
+    }
+  ]
+}

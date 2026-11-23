@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="液体与固体火箭发动机燃烧室、喷管热力计算及工况验证">
+  <title>火箭发动机热力计算工作台</title>
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-inner">
+      <a class="brand" href="/" aria-label="热力计算工作台首页">
+        <img width="30" height="30" src="/icon.svg" alt="">
+        <span class="brand-text"><strong>热力计算工作台</strong><small>Rocket Thermochemistry</small></span>
+      </a>
+      <div class="case-chip" aria-live="polite">
+        <span class="case-label">当前工况</span>
+        <strong id="case-title">等待求解</strong>
+        <span id="case-detail" class="case-detail">燃烧室与喷管一体化计算</span>
+      </div>
+      <div class="top-actions">
+        <div class="health"><span class="status-dot" id="connection-dot"></span><span id="connection">连接本地求解器</span></div>
+        <button type="button" class="icon-button" id="theme-toggle" aria-label="切换主题">
+          <svg class="icon-sun" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.8v2.4M10 15.8v2.4M1.8 10h2.4M15.8 10h2.4M4.2 4.2l1.7 1.7M14.1 14.1l1.7 1.7M4.2 15.8l1.7-1.7M14.1 5.9l1.7-1.7"/></svg>
+          <svg class="icon-moon" viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 12.3A7 7 0 0 1 7.7 3.5a7 7 0 1 0 8.8 8.8Z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+  <section class="hero" id="hero" aria-label="当前工况主视觉">
+    <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
+    <div class="hero-callouts" id="hero-callouts" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <p class="hero-eyebrow">推力室热力剖面 · 实算数据驱动</p>
+        <h1 class="hero-title"><span id="hero-name">火箭发动机热力计算</span><span class="hero-code" id="hero-code"></span></h1>
+        <p class="hero-sub" id="hero-sub">化学平衡 · 喷管膨胀 · 工况验证</p>
+      </div>
+      <dl class="hero-readouts" id="hero-readouts"></dl>
+    </div>
+    <p class="hero-note">粒子速度与颜色取自求解器的 <span class="math sym"><i>u</i>(<i>x</i>)</span>、<span class="math sym"><i>T</i>(<i>x</i>)</span>；扩张段按 15° 锥形当量长度换算，燃烧室与出口外羽流为示意。</p>
+  </section>
+  <main class="shell">
+    <div class="layout">
+      <aside class="setup">
+        <form id="case-form" class="form-panel">
+          <div class="form-scroll">
+            <div class="setup-title">
+              <div><p class="eyebrow">输入参数</p><h2>计算工况</h2></div>
+              <button type="button" class="text-button" id="reset">恢复默认</button>
+            </div>
+            <div class="toggle" aria-label="推进剂类型">
+              <label><input name="kind" type="radio" value="liquid" checked><span>液体发动机</span></label>
+              <label><input name="kind" type="radio" value="solid"><span>固体算例</span></label>
+            </div>
+            <fieldset id="liquid-fields">
+              <p class="section-label">发动机与推进剂</p>
+              <label class="field full">发动机预设<select id="preset" name="preset"></select></label>
+              <p id="preset-source" class="source-note"></p>
+              <div class="form-grid">
+                <label class="field">氧化剂<select id="oxidizer" name="oxidizer"></select></label>
+                <label class="field">燃料<select id="fuel" name="fuel"></select></label>
+                <label class="field">氧化剂温度<div class="unit-input"><input type="number" name="tox" step="any" min="1" required><span class="math">K</span></div></label>
+                <label class="field">燃料温度<div class="unit-input"><input type="number" name="tfuel" step="any" min="1" required><span class="math">K</span></div></label>
+                <label class="field full">氧燃质量比<div class="unit-input"><input type="number" name="of" step="any" min="0.01" required><span class="math sym"><i>O</i>/<i>F</i></span></div></label>
+              </div>
+            </fieldset>
+            <fieldset id="solid-fields" hidden disabled>
+              <p class="section-label">固体推进剂</p>
+              <div class="form-grid">
+                <label class="field">固体配方<select id="solid" name="solid"></select></label>
+                <label class="field">推进剂初温<div class="unit-input"><input type="number" name="tin" value="298.15" step="any" min="1" required><span class="math">K</span></div></label>
+              </div>
+            </fieldset>
+            <fieldset class="form-grid common-fields">
+              <p class="section-label full">燃烧室与喷管</p>
+              <label class="field">燃烧室绝对压强<div class="unit-input"><input type="number" name="pc" step="any" min="0.001" required><span class="math">MPa</span></div></label>
+              <label class="field">主推力室流量<div class="unit-input"><input type="number" name="mdot" step="any" min="0" required><span class="math">kg/s</span></div></label>
+              <label class="field">出口设定<select id="exit-mode" name="exitMode"><option value="eps">面积比</option><option value="pe">出口压强</option><option value="pr">出口／室压</option><option value="mach">出口马赫数</option></select></label>
+              <label class="field"><span id="exit-label">出口面积比</span><div class="unit-input"><input type="number" name="exitValue" step="any" required><span id="exit-unit" class="math sym"><i>A</i><sub>e</sub>/<i>A</i><sub>t</sub></span></div></label>
+              <label class="field">环境绝对压强<div class="unit-input"><input type="number" name="pa" step="any" min="0" required><span class="math">kPa</span></div></label>
+              <label class="field">膨胀模型<select id="model" name="model"></select></label>
+            </fieldset>
+            <details class="advanced">
+              <summary>高级设置与热损失</summary>
+              <div class="form-grid">
+                <label class="field">喉部判据<select name="throat"><option value="sonic">声速</option><option value="gamma">临界压强比</option><option value="massflux">最大质量流率</option></select></label>
+                <label class="field">剖面采样点<div class="unit-input"><input type="number" name="points" value="41" min="9" max="151" step="1" required><span>点</span></div></label>
+                <label class="field" data-heat>基准壁面净热损失<div class="unit-input"><input type="number" name="heat" value="0" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
+                <label class="field" data-heat>区间热损失上限（可选）<div class="unit-input"><input type="number" name="heatMax" value="0" min="0" max="2500" step="any" required><span class="math">kJ/kg</span></div></label>
+              </div>
+              <p class="source-note">按每千克产物计，默认 0。再生冷却时壁面热流大部分回到推进剂，不宜整体计为损失。只有需要做热损失敏感性分析时才填上限；实际性能损失请在「区间与验证」页的损失因子中设置。</p>
+            </details>
+          </div>
+          <div class="form-footer">
+            <div id="run-status" class="run-status" role="status" aria-live="polite">正在读取发动机预设…</div>
+            <div class="form-actions">
+              <button type="submit" class="primary" id="run">运行计算</button>
+              <button type="button" class="secondary" id="run-range">计算工况区间</button>
+            </div>
+          </div>
+        </form>
+      </aside>
+      <div class="workspace">
+        <nav class="tabs" id="tabs" aria-label="热力结果">
+          <button type="button" data-tab="overview" aria-current="page">结果总览</button>
+          <button type="button" data-tab="process">求解过程</button>
+          <button type="button" data-tab="field">彩色流场与 3D</button>
+          <button type="button" data-tab="validation">区间与验证</button>
+          <button type="button" data-tab="compare">工况对比 <span id="compare-count"></span></button>
+        </nav>
+        <p id="stale-banner" class="notice stale" role="status" hidden>输入已修改，下方仍是上一次的计算结果。点「运行计算」或「计算工况区间」更新。</p>
+        <div id="result-panel" tabindex="-1" aria-busy="true">
+          <section class="panel initial">
+            <div class="spinner" aria-hidden="true"></div>
+            <h2>正在读取本地求解器</h2>
+            <p>首个工况算完后，状态表和图表会自动显示。</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+  <p id="export-status" class="export-status" role="status" aria-live="polite" hidden></p>
+  <footer class="footer"><span>九系数热力数据库 · C 求解器 · 稳态准一维模型</span><span>数据与计算均在本机完成</span></footer>
+</body>
+</html>
